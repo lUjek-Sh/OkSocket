@@ -1,11 +1,14 @@
-apply plugin: 'java-library'
-
-dependencies {
-    implementation fileTree(dir: 'libs', include: ['*.jar'])
-    compile project(path: ':socket-common-interface')
+plugins {
+    id 'java-library'
 }
 
-apply from: '../publish.gradle'
+dependencies {
+    api project(':socket-core')
+    api project(':socket-common-interface')
+    testImplementation 'junit:junit:4.13.2'
+}
 
-sourceCompatibility = "1.7"
-targetCompatibility = "1.7"
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}

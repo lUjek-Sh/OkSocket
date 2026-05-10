@@ -38,6 +38,10 @@ public class OkServerOptions implements IIOCoreOptions {
      * 防止数据体过大的数据导致前端内存溢出.
      */
     private int mMaxReadDataMB;
+    private boolean isServerSocketReuseAddress;
+    private boolean isClientSocketReuseAddress;
+    private boolean isClientSocketKeepAlive;
+    private boolean isClientSocketTcpNoDelay;
 
     private OkServerOptions() {
     }
@@ -55,6 +59,10 @@ public class OkServerOptions implements IIOCoreOptions {
         okOptions.mReadPackageBytes = 50;
         okOptions.mReadOrder = ByteOrder.BIG_ENDIAN;
         okOptions.mWriteOrder = ByteOrder.BIG_ENDIAN;
+        okOptions.isServerSocketReuseAddress = true;
+        okOptions.isClientSocketReuseAddress = true;
+        okOptions.isClientSocketKeepAlive = true;
+        okOptions.isClientSocketTcpNoDelay = true;
         return okOptions;
     }
 
@@ -62,19 +70,11 @@ public class OkServerOptions implements IIOCoreOptions {
         private OkServerOptions mOptions;
 
         public Builder() {
-            mOptions = getDefault();
+            this(OkServerOptions.getDefault());
         }
 
         public Builder(OkServerOptions options) {
-            OkServerOptions clone = new OkServerOptions();
-            clone.mReaderProtocol = options.mReaderProtocol;
-            clone.mConnectCapacity = options.mConnectCapacity;
-            clone.mMaxReadDataMB = options.mMaxReadDataMB;
-            clone.mWritePackageBytes = options.mWritePackageBytes;
-            clone.mReadPackageBytes = options.mReadPackageBytes;
-            clone.mReadOrder = options.mReadOrder;
-            clone.mWriteOrder = options.mWriteOrder;
-            mOptions = clone;
+            mOptions = copyOf(options);
         }
 
         public Builder setConnectCapacity(int connectCapacity) {
@@ -112,14 +112,97 @@ public class OkServerOptions implements IIOCoreOptions {
             return this;
         }
 
+        public Builder setServerSocketReuseAddress(boolean serverSocketReuseAddress) {
+            mOptions.isServerSocketReuseAddress = serverSocketReuseAddress;
+            return this;
+        }
+
+        public Builder setClientSocketReuseAddress(boolean clientSocketReuseAddress) {
+            mOptions.isClientSocketReuseAddress = clientSocketReuseAddress;
+            return this;
+        }
+
+        public Builder setClientSocketKeepAlive(boolean clientSocketKeepAlive) {
+            mOptions.isClientSocketKeepAlive = clientSocketKeepAlive;
+            return this;
+        }
+
+        public Builder setClientSocketTcpNoDelay(boolean clientSocketTcpNoDelay) {
+            mOptions.isClientSocketTcpNoDelay = clientSocketTcpNoDelay;
+            return this;
+        }
+
         public OkServerOptions build() {
+            validate(mOptions);
             return mOptions;
+        }
+
+        private static OkServerOptions copyOf(OkServerOptions source) {
+            if (source == null) {
+                return OkServerOptions.getDefault();
+            }
+            OkServerOptions copy = new OkServerOptions();
+            copy.mReaderProtocol = source.mReaderProtocol;
+            copy.mConnectCapacity = source.mConnectCapacity;
+            copy.mMaxReadDataMB = source.mMaxReadDataMB;
+            copy.mWritePackageBytes = source.mWritePackageBytes;
+            copy.mReadPackageBytes = source.mReadPackageBytes;
+            copy.mReadOrder = source.mReadOrder;
+            copy.mWriteOrder = source.mWriteOrder;
+            copy.isServerSocketReuseAddress = source.isServerSocketReuseAddress;
+            copy.isClientSocketReuseAddress = source.isClientSocketReuseAddress;
+            copy.isClientSocketKeepAlive = source.isClientSocketKeepAlive;
+            copy.isClientSocketTcpNoDelay = source.isClientSocketTcpNoDelay;
+            return copy;
+        }
+
+        private static void validate(OkServerOptions options) {
+            if (options == null) {
+                throw new IllegalArgumentException("OkServerOptions can not be null");
+            }
+            if (options.mReaderProtocol == null) {
+                throw new IllegalArgumentException("ReaderProtocol can not be null");
+            }
+            if (options.mWriteOrder == null) {
+                throw new IllegalArgumentException("WriteByteOrder can not be null");
+            }
+            if (options.mReadOrder == null) {
+                throw new IllegalArgumentException("ReadByteOrder can not be null");
+            }
+            if (options.mConnectCapacity <= 0) {
+                throw new IllegalArgumentException("ConnectCapacity must be greater than 0");
+            }
+            if (options.mWritePackageBytes <= 0) {
+                throw new IllegalArgumentException("WritePackageBytes must be greater than 0");
+            }
+            if (options.mReadPackageBytes <= 0) {
+                throw new IllegalArgumentException("ReadPackageBytes must be greater than 0");
+            }
+            if (options.mMaxReadDataMB <= 0) {
+                throw new IllegalArgumentException("MaxReadDataMB must be greater than 0");
+            }
         }
     }
 
 
     public int getConnectCapacity() {
         return mConnectCapacity;
+    }
+
+    public boolean isServerSocketReuseAddress() {
+        return isServerSocketReuseAddress;
+    }
+
+    public boolean isClientSocketReuseAddress() {
+        return isClientSocketReuseAddress;
+    }
+
+    public boolean isClientSocketKeepAlive() {
+        return isClientSocketKeepAlive;
+    }
+
+    public boolean isClientSocketTcpNoDelay() {
+        return isClientSocketTcpNoDelay;
     }
 
     @Override

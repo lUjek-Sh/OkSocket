@@ -8,7 +8,6 @@ import com.xuhao.didi.core.utils.BytesUtils;
 import com.xuhao.didi.core.utils.SLog;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 
 /**
  * Created by xuhao on 2017/5/31.
@@ -16,33 +15,17 @@ import java.nio.ByteBuffer;
 
 public class ReaderImpl extends AbsReader {
 
-    private ByteBuffer mRemainingBuf;
-
     @Override
     public void read() throws RuntimeException {
         OriginalData originalData = new OriginalData();
         IReaderProtocol headerProtocol = mOkOptions.getReaderProtocol();
         int headerLength = headerProtocol.getHeaderLength();
-        ByteBuffer headBuf = ByteBuffer.allocate(headerLength);
-        headBuf.order(mOkOptions.getReadByteOrder());
         try {
-            if (mRemainingBuf != null) {
-                mRemainingBuf.flip();
-                int length = Math.min(mRemainingBuf.remaining(), headerLength);
-                headBuf.put(mRemainingBuf.array(), 0, length);
-                if (length < headerLength) {
-                    //there are no data left
-                    mRemainingBuf = null;
-                    readHeaderFromChannel(headBuf, headerLength - length);
-                } else {
-                    mRemainingBuf.position(headerLength);
-                }
-            } else {
-                readHeaderFromChannel(headBuf, headBuf.capacity());
-            }
-            originalData.setHeadBytes(headBuf.array());
+            byte[] headBytes = new byte[headerLength];
+            readFully(headBytes, 0, headBytes.length);
+            originalData.setHeadBytes(headBytes);
             if (SLog.isDebug()) {
-                SLog.i("read head: " + BytesUtils.toHexStringForLog(headBuf.array()));
+                SLog.i("read head: " + BytesUtils.toHexStringForLog(headBytes));
             }
             int bodyLength = headerProtocol.getBodyLength(originalData.getHeadBytes(), mOkOptions.getReadByteOrder());
             if (SLog.isDebug()) {
@@ -55,92 +38,50 @@ public class ReaderImpl extends AbsReader {
                             "According to the packet header data in the transport protocol, the package length is " + bodyLength + " Bytes.\r\n" +
                             "You need check your <ReaderProtocol> definition");
                 }
-                ByteBuffer byteBuffer = ByteBuffer.allocate(bodyLength);
-                byteBuffer.order(mOkOptions.getReadByteOrder());
-                if (mRemainingBuf != null) {
-                    int bodyStartPosition = mRemainingBuf.position();
-                    int length = Math.min(mRemainingBuf.remaining(), bodyLength);
-                    byteBuffer.put(mRemainingBuf.array(), bodyStartPosition, length);
-                    mRemainingBuf.position(bodyStartPosition + length);
-                    if (length == bodyLength) {
-                        if (mRemainingBuf.remaining() > 0) {//there are data left
-                            ByteBuffer temp = ByteBuffer.allocate(mRemainingBuf.remaining());
-                            temp.order(mOkOptions.getReadByteOrder());
-                            temp.put(mRemainingBuf.array(), mRemainingBuf.position(), mRemainingBuf.remaining());
-                            mRemainingBuf = temp;
-                        } else {//there are no data left
-                            mRemainingBuf = null;
-                        }
-                        //cause this time data from remaining buffer not from channel.
-                        originalData.setBodyBytes(byteBuffer.array());
-                        mStateSender.sendBroadcast(IOAction.ACTION_READ_COMPLETE, originalData);
-                        return;
-                    } else {//there are no data left in buffer and some data pieces in channel
-                        mRemainingBuf = null;
-                    }
-                }
-                readBodyFromChannel(byteBuffer);
-                originalData.setBodyBytes(byteBuffer.array());
+                byte[] bodyBytes = new byte[bodyLength];
+                readBodyFromChannel(bodyBytes);
+                originalData.setBodyBytes(bodyBytes);
             } else if (bodyLength == 0) {
                 originalData.setBodyBytes(new byte[0]);
-                if (mRemainingBuf != null) {
-                    //the body is empty so header remaining buf need set null
-                    if (mRemainingBuf.hasRemaining()) {
-                        ByteBuffer temp = ByteBuffer.allocate(mRemainingBuf.remaining());
-                        temp.order(mOkOptions.getReadByteOrder());
-                        temp.put(mRemainingBuf.array(), mRemainingBuf.position(), mRemainingBuf.remaining());
-                        mRemainingBuf = temp;
-                    } else {
-                        mRemainingBuf = null;
-                    }
-                }
             } else if (bodyLength < 0) {
                 throw new ReadException(
                         "read body is wrong,this socket input stream is end of file read " + bodyLength + " ,that mean this socket is disconnected by server");
             }
             mStateSender.sendBroadcast(IOAction.ACTION_READ_COMPLETE, originalData);
+        } catch (ReadException e) {
+            throw e;
         } catch (Exception e) {
-            ReadException readException = new ReadException(e);
-            throw readException;
+            throw new ReadException(e);
         }
     }
 
-    private void readHeaderFromChannel(ByteBuffer headBuf, int readLength) throws IOException {
-        for (int i = 0; i < readLength; i++) {
-            byte[] bytes = new byte[1];
-            int value = mInputStream.read(bytes);
-            if (value == -1) {
+    private void readFully(byte[] target, int offset, int length) throws IOException {
+        int totalRead = 0;
+        while (totalRead < length) {
+            int readSize = mInputStream.read(target, offset + totalRead, length - totalRead);
+            if (readSize == -1) {
                 throw new ReadException(
-                        "read head is wrong, this socket input stream is end of file read " + value + " ,that mean this socket is disconnected by server");
+                        "socket input stream reached end of file while reading " + length + " bytes");
             }
-            headBuf.put(bytes);
+            totalRead += readSize;
         }
     }
 
-    private void readBodyFromChannel(ByteBuffer byteBuffer) throws IOException {
-        while (byteBuffer.hasRemaining()) {
-            try {
-                byte[] bufArray = new byte[mOkOptions.getReadPackageBytes()];
-                int len = mInputStream.read(bufArray);
-                if (len == -1) {
-                    break;
-                }
-                int remaining = byteBuffer.remaining();
-                if (len > remaining) {
-                    byteBuffer.put(bufArray, 0, remaining);
-                    mRemainingBuf = ByteBuffer.allocate(len - remaining);
-                    mRemainingBuf.order(mOkOptions.getReadByteOrder());
-                    mRemainingBuf.put(bufArray, remaining, len - remaining);
-                } else {
-                    byteBuffer.put(bufArray, 0, len);
-                }
-            } catch (Exception e) {
-                throw e;
-            }
+    private void readBodyFromChannel(byte[] bodyBytes) throws IOException {
+        int readPackageBytes = mOkOptions.getReadPackageBytes();
+        if (readPackageBytes <= 0) {
+            throw new ReadException("read package bytes must be greater than 0");
+        }
+
+        int offset = 0;
+        while (offset < bodyBytes.length) {
+            int readSize = Math.min(readPackageBytes, bodyBytes.length - offset);
+            readFully(bodyBytes, offset, readSize);
+            offset += readSize;
         }
         if (SLog.isDebug()) {
-            SLog.i("read total bytes: " + BytesUtils.toHexStringForLog(byteBuffer.array()));
-            SLog.i("read total length:" + (byteBuffer.capacity() - byteBuffer.remaining()));
+            SLog.i("read total bytes: " + BytesUtils.toHexStringForLog(bodyBytes));
+            SLog.i("read total length:" + bodyBytes.length);
         }
     }
 

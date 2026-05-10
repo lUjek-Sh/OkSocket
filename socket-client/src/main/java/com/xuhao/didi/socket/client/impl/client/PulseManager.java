@@ -5,50 +5,37 @@ import com.xuhao.didi.socket.client.impl.exceptions.DogDeadException;
 import com.xuhao.didi.socket.client.sdk.client.OkSocketOptions;
 import com.xuhao.didi.socket.client.sdk.client.bean.IPulse;
 import com.xuhao.didi.socket.client.sdk.client.connection.IConnectionManager;
-import com.xuhao.didi.socket.common.interfaces.basic.AbsLoopThread;
 
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Created by xuhao on 2017/5/18.
  */
-
 public class PulseManager implements IPulse {
-    /**
-     * 数据包发送器
-     */
-    private volatile IConnectionManager mManager;
-    /**
-     * 心跳数据包
-     */
-    private IPulseSendable mSendable;
-    /**
-     * 连接参数
-     */
-    private volatile OkSocketOptions mOkOptions;
-    /**
-     * 当前频率
-     */
-    private volatile long mCurrentFrequency;
-    /**
-     * 当前的线程模式
-     */
-    private volatile OkSocketOptions.IOThreadMode mCurrentThreadMode;
-    /**
-     * 是否死掉
-     */
-    private volatile boolean isDead = false;
-    /**
-     * 允许遗漏的次数
-     */
-    private volatile AtomicInteger mLoseTimes = new AtomicInteger(-1);
+    static final long MIN_PULSE_FREQUENCY_MILLIS = 1000L;
 
-    private PulseThread mPulseThread = new PulseThread();
+    private final Object mScheduleLock = new Object();
+    private final AtomicInteger mLoseTimes = new AtomicInteger(-1);
+    private final ScheduledExecutorService mPulseExecutor = Executors.newSingleThreadScheduledExecutor(new PulseThreadFactory());
+
+    private volatile IConnectionManager mManager;
+    private volatile OkSocketOptions mOkOptions;
+    private volatile IPulseSendable mSendable;
+    private volatile ScheduledFuture<?> mPulseFuture;
+    private volatile long mCurrentFrequency;
+    private volatile OkSocketOptions.IOThreadMode mCurrentThreadMode;
+    private volatile boolean isDead = false;
 
     PulseManager(IConnectionManager manager, OkSocketOptions okOptions) {
         mManager = manager;
         mOkOptions = okOptions;
         mCurrentThreadMode = mOkOptions.getIOThreadMode();
+        mCurrentFrequency = normalizePulseFrequency(mOkOptions.getPulseFrequency());
     }
 
     public synchronized IPulse setPulseSendable(IPulseSendable sendable) {
@@ -64,13 +51,15 @@ public class PulseManager implements IPulse {
 
     @Override
     public synchronized void pulse() {
-        privateDead();
-        updateFrequency();
-        if (mCurrentThreadMode != OkSocketOptions.IOThreadMode.SIMPLEX) {
-            if (mPulseThread.isShutdown()) {
-                mPulseThread.start();
-            }
+        if (isDead) {
+            return;
         }
+        updateFrequency();
+        if (mCurrentThreadMode == OkSocketOptions.IOThreadMode.SIMPLEX) {
+            cancelPulseSchedule();
+            return;
+        }
+        reschedulePulse();
     }
 
     @Override
@@ -84,29 +73,26 @@ public class PulseManager implements IPulse {
     }
 
     public synchronized void dead() {
+        if (isDead) {
+            return;
+        }
         mLoseTimes.set(0);
         isDead = true;
-        privateDead();
+        cancelPulseSchedule();
+        mPulseExecutor.shutdownNow();
     }
 
     private synchronized void updateFrequency() {
         if (mCurrentThreadMode != OkSocketOptions.IOThreadMode.SIMPLEX) {
-            mCurrentFrequency = mOkOptions.getPulseFrequency();
-            mCurrentFrequency = mCurrentFrequency < 1000 ? 1000 : mCurrentFrequency;//间隔最小为一秒
+            mCurrentFrequency = normalizePulseFrequency(mOkOptions.getPulseFrequency());
         } else {
-            privateDead();
+            cancelPulseSchedule();
         }
     }
 
     @Override
     public synchronized void feed() {
         mLoseTimes.set(-1);
-    }
-
-    private void privateDead() {
-        if (mPulseThread != null) {
-            mPulseThread.shutdown();
-        }
     }
 
     public int getLoseTimes() {
@@ -117,32 +103,79 @@ public class PulseManager implements IPulse {
         mOkOptions = okOptions;
         mCurrentThreadMode = mOkOptions.getIOThreadMode();
         updateFrequency();
+        if (isDead) {
+            return;
+        }
+        if (mCurrentThreadMode == OkSocketOptions.IOThreadMode.SIMPLEX) {
+            cancelPulseSchedule();
+        } else if (hasScheduledPulse()) {
+            reschedulePulse();
+        }
     }
 
-    private class PulseThread extends AbsLoopThread {
+    static long normalizePulseFrequency(long pulseFrequency) {
+        return pulseFrequency < MIN_PULSE_FREQUENCY_MILLIS ? MIN_PULSE_FREQUENCY_MILLIS : pulseFrequency;
+    }
 
-        @Override
-        protected void runInLoopThread() throws Exception {
-            if (isDead) {
-                shutdown();
+    private boolean hasScheduledPulse() {
+        ScheduledFuture<?> pulseFuture = mPulseFuture;
+        return pulseFuture != null && !pulseFuture.isCancelled() && !pulseFuture.isDone();
+    }
+
+    private void reschedulePulse() {
+        synchronized (mScheduleLock) {
+            cancelPulseScheduleLocked();
+            if (isDead || mCurrentThreadMode == OkSocketOptions.IOThreadMode.SIMPLEX || mPulseExecutor.isShutdown()) {
                 return;
             }
-            if (mManager != null && mSendable != null) {
-                if (mOkOptions.getPulseFeedLoseTimes() != -1 && mLoseTimes.incrementAndGet() >= mOkOptions.getPulseFeedLoseTimes()) {
-                    mManager.disconnect(new DogDeadException("you need feed dog on time,otherwise he will die"));
-                } else {
-                    mManager.send(mSendable);
-                }
-            }
-
-            //not safety sleep.
-            Thread.sleep(mCurrentFrequency);
-        }
-
-        @Override
-        protected void loopFinish(Exception e) {
+            mPulseFuture = mPulseExecutor.scheduleWithFixedDelay(new PulseTask(), 0L, mCurrentFrequency, TimeUnit.MILLISECONDS);
         }
     }
 
+    private void cancelPulseSchedule() {
+        synchronized (mScheduleLock) {
+            cancelPulseScheduleLocked();
+        }
+    }
 
+    private void cancelPulseScheduleLocked() {
+        ScheduledFuture<?> pulseFuture = mPulseFuture;
+        if (pulseFuture != null) {
+            pulseFuture.cancel(true);
+            mPulseFuture = null;
+        }
+    }
+
+    private void handlePulseTick() {
+        if (isDead) {
+            cancelPulseSchedule();
+            return;
+        }
+        if (mManager == null || mSendable == null) {
+            return;
+        }
+        int pulseFeedLoseTimes = mOkOptions.getPulseFeedLoseTimes();
+        if (pulseFeedLoseTimes != -1 && mLoseTimes.incrementAndGet() >= pulseFeedLoseTimes) {
+            cancelPulseSchedule();
+            mManager.disconnect(new DogDeadException("you need feed dog on time,otherwise he will die"));
+            return;
+        }
+        mManager.send(mSendable);
+    }
+
+    private final class PulseTask implements Runnable {
+        @Override
+        public void run() {
+            handlePulseTick();
+        }
+    }
+
+    private static final class PulseThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "client_pulse_thread");
+            thread.setDaemon(true);
+            return thread;
+        }
+    }
 }

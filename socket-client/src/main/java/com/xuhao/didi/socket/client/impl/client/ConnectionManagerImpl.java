@@ -19,6 +19,7 @@ import com.xuhao.didi.socket.common.interfaces.utils.TextUtils;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.net.SocketException;
 import java.security.SecureRandom;
 
 import javax.net.ssl.SSLContext;
@@ -29,6 +30,8 @@ import javax.net.ssl.TrustManager;
  * Created by xuhao on 2017/5/16.
  */
 public class ConnectionManagerImpl extends AbsConnectionManager {
+    static final String DEFAULT_SSL_PROTOCOL = "TLS";
+
     /**
      * 套接字
      */
@@ -94,6 +97,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         }
         isConnectionPermitted = false;
         if (isConnect()) {
+            isConnectionPermitted = true;
             return;
         }
         isDisconnecting = false;
@@ -109,11 +113,12 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         mActionHandler.attach(this, this);
         SLog.i("mActionHandler is attached.");
 
-        if (mReconnectionManager != null) {
+        AbsReconnectionManager configuredReconnectionManager = mOptions.getReconnectionManager();
+        if (mReconnectionManager != null && mReconnectionManager != configuredReconnectionManager) {
             mReconnectionManager.detach();
             SLog.i("ReconnectionManager is detached.");
         }
-        mReconnectionManager = mOptions.getReconnectionManager();
+        mReconnectionManager = configuredReconnectionManager;
         if (mReconnectionManager != null) {
             mReconnectionManager.attach(this);
             SLog.i("ReconnectionManager is attached.");
@@ -139,10 +144,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
 
         SSLSocketFactory factory = config.getCustomSSLFactory();
         if (factory == null) {
-            String protocol = "SSL";
-            if (!TextUtils.isEmpty(config.getProtocol())) {
-                protocol = config.getProtocol();
-            }
+            String protocol = resolveSslProtocol(config);
 
             TrustManager[] trustManagers = config.getTrustManagers();
             if (trustManagers == null || trustManagers.length == 0) {
@@ -175,6 +177,13 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         }
     }
 
+    static String resolveSslProtocol(OkSocketSSLConfig config) {
+        if (config == null || TextUtils.isEmpty(config.getProtocol())) {
+            return DEFAULT_SSL_PROTOCOL;
+        }
+        return config.getProtocol();
+    }
+
     private class ConnectionThread extends Thread {
         public ConnectionThread(String name) {
             super(name);
@@ -185,6 +194,9 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             try {
                 try {
                     mSocket = getSocketByConfig();
+                    prepareSocketBeforeConnect(mSocket);
+                } catch (UnConnectException e) {
+                    throw e;
                 } catch (Exception e) {
                     if (mOptions.isDebug()) {
                         e.printStackTrace();
@@ -199,7 +211,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 SLog.i("Start connect: " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " socket server...");
                 mSocket.connect(new InetSocketAddress(mRemoteConnectionInfo.getIp(), mRemoteConnectionInfo.getPort()), mOptions.getConnectTimeoutSecond() * 1000);
                 //关闭Nagle算法,无论TCP数据报大小,立即发送
-                mSocket.setTcpNoDelay(true);
+                prepareSocketAfterConnect(mSocket);
                 resolveManager();
                 sendBroadcast(IAction.ACTION_CONNECTION_SUCCESS);
                 SLog.i("Socket server: " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect successful!");
@@ -207,7 +219,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 if (mOptions.isDebug()) {
                     e.printStackTrace();
                 }
-                Exception exception = new UnConnectException(e);
+                Exception exception = e instanceof UnConnectException ? e : new UnConnectException(e);
                 SLog.e("Socket server " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect failed! error msg:" + e.getMessage());
                 sendBroadcast(IAction.ACTION_CONNECTION_FAILED, exception);
             } finally {
@@ -339,13 +351,18 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         if (mPulseManager != null) {
             mPulseManager.setOkOptions(mOptions);
         }
+        if (mSocket != null && isConnect()) {
+            applyRuntimeSocketOptions(mSocket);
+        }
         if (mReconnectionManager != null && !mReconnectionManager.equals(mOptions.getReconnectionManager())) {
             if (mReconnectionManager != null) {
                 mReconnectionManager.detach();
             }
             SLog.i("reconnection manager is replaced");
             mReconnectionManager = mOptions.getReconnectionManager();
-            mReconnectionManager.attach(this);
+            if (mReconnectionManager != null) {
+                mReconnectionManager.attach(this);
+            }
         }
         return this;
     }
@@ -361,7 +378,10 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             return false;
         }
 
-        return mSocket.isConnected() && !mSocket.isClosed();
+        return mSocket.isConnected()
+                && !mSocket.isClosed()
+                && !mSocket.isInputShutdown()
+                && !mSocket.isOutputShutdown();
     }
 
     @Override
@@ -391,7 +411,11 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             if (isConnect()) {
                 InetSocketAddress address = (InetSocketAddress) mSocket.getLocalSocketAddress();
                 if (address != null) {
-                    local = new ConnectionInfo(address.getHostName(), address.getPort());
+                    if (address.getAddress() != null) {
+                        local = new ConnectionInfo(address.getAddress().getHostAddress(), address.getPort());
+                    } else {
+                        local = new ConnectionInfo(address.getHostString(), address.getPort());
+                    }
                 }
             }
         }
@@ -404,5 +428,35 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             throw new IllegalStateException("Socket is connected, can't set local info after connect.");
         }
         mLocalConnectionInfo = localConnectionInfo;
+    }
+
+    private void prepareSocketBeforeConnect(Socket socket) throws SocketException {
+        if (socket == null) {
+            return;
+        }
+        socket.setReuseAddress(mOptions.isSocketReuseAddress());
+    }
+
+    private void prepareSocketAfterConnect(Socket socket) throws SocketException {
+        if (socket == null) {
+            return;
+        }
+        socket.setKeepAlive(mOptions.isSocketKeepAlive());
+        socket.setTcpNoDelay(mOptions.isSocketTcpNoDelay());
+    }
+
+    private void applyRuntimeSocketOptions(Socket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            socket.setKeepAlive(mOptions.isSocketKeepAlive());
+            socket.setTcpNoDelay(mOptions.isSocketTcpNoDelay());
+        } catch (SocketException e) {
+            if (mOptions.isDebug()) {
+                e.printStackTrace();
+            }
+            SLog.e("Unable to apply runtime socket options: " + e.getMessage());
+        }
     }
 }

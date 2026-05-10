@@ -29,19 +29,22 @@ public abstract class AbsLoopThread implements Runnable {
     }
 
     public synchronized void start() {
-        if (isStop) {
-            thread = new Thread(this, threadName);
-            isStop = false;
-            loopTimes = 0;
-            thread.start();
-            SLog.w(threadName + " is starting");
+        if (!isShutdown || (thread != null && thread.isAlive())) {
+            return;
         }
+        thread = new Thread(this, threadName);
+        isStop = false;
+        isShutdown = false;
+        ioException = null;
+        loopTimes = 0;
+        thread.start();
+        SLog.w(threadName + " is starting");
     }
 
     @Override
     public final void run() {
+        Thread currentThread = Thread.currentThread();
         try {
-            isShutdown = false;
             beforeLoop();
             while (!isStop) {
                 this.runInLoopThread();
@@ -52,7 +55,11 @@ public abstract class AbsLoopThread implements Runnable {
                 ioException = e;
             }
         } finally {
+            isStop = true;
             isShutdown = true;
+            if (thread == currentThread) {
+                thread = null;
+            }
             this.loopFinish(ioException);
             ioException = null;
             SLog.w(threadName + " is shutting down");
@@ -76,10 +83,10 @@ public abstract class AbsLoopThread implements Runnable {
     protected abstract void loopFinish(Exception e);
 
     public synchronized void shutdown() {
-        if (thread != null && !isStop) {
+        Thread runningThread = thread;
+        if (runningThread != null && !isStop) {
             isStop = true;
-            thread.interrupt();
-            thread = null;
+            runningThread.interrupt();
         }
     }
 

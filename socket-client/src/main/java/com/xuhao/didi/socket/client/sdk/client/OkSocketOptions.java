@@ -70,6 +70,11 @@ public class OkSocketOptions implements IIOCoreOptions {
      * 连接超时时间(秒)
      */
     private int mConnectTimeoutSecond;
+    private long mReconnectDelayMillis;
+    private long mReconnectMaxDelayMillis;
+    private double mReconnectDelayScale;
+    private double mReconnectJitterRatio;
+    private int mReconnectBackupSwitchThreshold;
     /**
      * 最大读取数据的兆数(MB)<br>
      * 防止服务器返回数据体过大的数据导致前端内存溢出.
@@ -87,6 +92,9 @@ public class OkSocketOptions implements IIOCoreOptions {
      * 套接字工厂
      */
     private OkSocketFactory mOkSocketFactory;
+    private boolean isSocketReuseAddress;
+    private boolean isSocketKeepAlive;
+    private boolean isSocketTcpNoDelay;
     /**
      * 从独立线程进行回调.
      */
@@ -115,11 +123,11 @@ public class OkSocketOptions implements IIOCoreOptions {
         }
 
         public Builder(IConfiguration configuration) {
-            this(configuration.getOption());
+            this(configuration == null ? null : configuration.getOption());
         }
 
         public Builder(OkSocketOptions okOptions) {
-            mOptions = okOptions;
+            mOptions = copyOf(okOptions);
         }
 
         /**
@@ -275,6 +283,31 @@ public class OkSocketOptions implements IIOCoreOptions {
             return this;
         }
 
+        public Builder setReconnectDelayMillis(long reconnectDelayMillis) {
+            mOptions.mReconnectDelayMillis = reconnectDelayMillis;
+            return this;
+        }
+
+        public Builder setReconnectMaxDelayMillis(long reconnectMaxDelayMillis) {
+            mOptions.mReconnectMaxDelayMillis = reconnectMaxDelayMillis;
+            return this;
+        }
+
+        public Builder setReconnectDelayScale(double reconnectDelayScale) {
+            mOptions.mReconnectDelayScale = reconnectDelayScale;
+            return this;
+        }
+
+        public Builder setReconnectJitterRatio(double reconnectJitterRatio) {
+            mOptions.mReconnectJitterRatio = reconnectJitterRatio;
+            return this;
+        }
+
+        public Builder setReconnectBackupSwitchThreshold(int reconnectBackupSwitchThreshold) {
+            mOptions.mReconnectBackupSwitchThreshold = reconnectBackupSwitchThreshold;
+            return this;
+        }
+
         /**
          * 设置断线重连的连接管理器<br>
          * 默认的连接管理器为{@link DefaultReconnectManager}<br>
@@ -301,6 +334,21 @@ public class OkSocketOptions implements IIOCoreOptions {
             return this;
         }
 
+        public Builder setSocketReuseAddress(boolean socketReuseAddress) {
+            mOptions.isSocketReuseAddress = socketReuseAddress;
+            return this;
+        }
+
+        public Builder setSocketKeepAlive(boolean socketKeepAlive) {
+            mOptions.isSocketKeepAlive = socketKeepAlive;
+            return this;
+        }
+
+        public Builder setSocketTcpNoDelay(boolean socketTcpNoDelay) {
+            mOptions.isSocketTcpNoDelay = socketTcpNoDelay;
+            return this;
+        }
+
         /**
          * 设置回调在线程中,不是在UI线程中.
          *
@@ -314,7 +362,94 @@ public class OkSocketOptions implements IIOCoreOptions {
         }
 
         public OkSocketOptions build() {
+            validate(mOptions);
             return mOptions;
+        }
+
+        private static OkSocketOptions copyOf(OkSocketOptions source) {
+            if (source == null) {
+                return OkSocketOptions.getDefault();
+            }
+            OkSocketOptions copy = new OkSocketOptions();
+            copy.mIOThreadMode = source.mIOThreadMode;
+            copy.isConnectionHolden = source.isConnectionHolden;
+            copy.mWriteOrder = source.mWriteOrder;
+            copy.mReadByteOrder = source.mReadByteOrder;
+            copy.mReaderProtocol = source.mReaderProtocol;
+            copy.mWritePackageBytes = source.mWritePackageBytes;
+            copy.mReadPackageBytes = source.mReadPackageBytes;
+            copy.mPulseFrequency = source.mPulseFrequency;
+            copy.mPulseFeedLoseTimes = source.mPulseFeedLoseTimes;
+            copy.mConnectTimeoutSecond = source.mConnectTimeoutSecond;
+            copy.mReconnectDelayMillis = source.mReconnectDelayMillis;
+            copy.mReconnectMaxDelayMillis = source.mReconnectMaxDelayMillis;
+            copy.mReconnectDelayScale = source.mReconnectDelayScale;
+            copy.mReconnectJitterRatio = source.mReconnectJitterRatio;
+            copy.mReconnectBackupSwitchThreshold = source.mReconnectBackupSwitchThreshold;
+            copy.mMaxReadDataMB = source.mMaxReadDataMB;
+            copy.mReconnectionManager = source.mReconnectionManager;
+            copy.mSSLConfig = source.mSSLConfig;
+            copy.mOkSocketFactory = source.mOkSocketFactory;
+            copy.isSocketReuseAddress = source.isSocketReuseAddress;
+            copy.isSocketKeepAlive = source.isSocketKeepAlive;
+            copy.isSocketTcpNoDelay = source.isSocketTcpNoDelay;
+            copy.isCallbackInIndependentThread = source.isCallbackInIndependentThread;
+            copy.mCallbackThreadModeToken = source.mCallbackThreadModeToken;
+            return copy;
+        }
+
+        private static void validate(OkSocketOptions options) {
+            if (options == null) {
+                throw new IllegalArgumentException("OkSocketOptions can not be null");
+            }
+            if (options.mIOThreadMode == null) {
+                throw new IllegalArgumentException("IOThreadMode can not be null");
+            }
+            if (options.mReaderProtocol == null) {
+                throw new IllegalArgumentException("ReaderProtocol can not be null");
+            }
+            if (options.mWriteOrder == null) {
+                throw new IllegalArgumentException("WriteByteOrder can not be null");
+            }
+            if (options.mReadByteOrder == null) {
+                throw new IllegalArgumentException("ReadByteOrder can not be null");
+            }
+            if (options.mWritePackageBytes <= 0) {
+                throw new IllegalArgumentException("WritePackageBytes must be greater than 0");
+            }
+            if (options.mReadPackageBytes <= 0) {
+                throw new IllegalArgumentException("ReadPackageBytes must be greater than 0");
+            }
+            if (options.mConnectTimeoutSecond < 0) {
+                throw new IllegalArgumentException("ConnectTimeoutSecond can not be negative");
+            }
+            if (options.mReconnectDelayMillis <= 0) {
+                throw new IllegalArgumentException("ReconnectDelayMillis must be greater than 0");
+            }
+            if (options.mReconnectMaxDelayMillis <= 0) {
+                throw new IllegalArgumentException("ReconnectMaxDelayMillis must be greater than 0");
+            }
+            if (options.mReconnectMaxDelayMillis < options.mReconnectDelayMillis) {
+                throw new IllegalArgumentException("ReconnectMaxDelayMillis must be greater than or equal to ReconnectDelayMillis");
+            }
+            if (options.mReconnectDelayScale < 1.0d) {
+                throw new IllegalArgumentException("ReconnectDelayScale must be greater than or equal to 1.0");
+            }
+            if (options.mReconnectJitterRatio < 0.0d || options.mReconnectJitterRatio > 1.0d) {
+                throw new IllegalArgumentException("ReconnectJitterRatio must be between 0 and 1");
+            }
+            if (options.mReconnectBackupSwitchThreshold < 0) {
+                throw new IllegalArgumentException("ReconnectBackupSwitchThreshold can not be negative");
+            }
+            if (options.mMaxReadDataMB <= 0) {
+                throw new IllegalArgumentException("MaxReadDataMB must be greater than 0");
+            }
+            if (options.mPulseFrequency < 0) {
+                throw new IllegalArgumentException("PulseFrequency can not be negative");
+            }
+            if (options.mPulseFeedLoseTimes == 0 || options.mPulseFeedLoseTimes < -1) {
+                throw new IllegalArgumentException("PulseFeedLoseTimes must be -1 or greater than 0");
+            }
         }
     }
 
@@ -334,8 +469,40 @@ public class OkSocketOptions implements IIOCoreOptions {
         return mOkSocketFactory;
     }
 
+    public boolean isSocketReuseAddress() {
+        return isSocketReuseAddress;
+    }
+
+    public boolean isSocketKeepAlive() {
+        return isSocketKeepAlive;
+    }
+
+    public boolean isSocketTcpNoDelay() {
+        return isSocketTcpNoDelay;
+    }
+
     public int getConnectTimeoutSecond() {
         return mConnectTimeoutSecond;
+    }
+
+    public long getReconnectDelayMillis() {
+        return mReconnectDelayMillis;
+    }
+
+    public long getReconnectMaxDelayMillis() {
+        return mReconnectMaxDelayMillis;
+    }
+
+    public double getReconnectDelayScale() {
+        return mReconnectDelayScale;
+    }
+
+    public double getReconnectJitterRatio() {
+        return mReconnectJitterRatio;
+    }
+
+    public int getReconnectBackupSwitchThreshold() {
+        return mReconnectBackupSwitchThreshold;
     }
 
     public boolean isConnectionHolden() {
@@ -399,6 +566,11 @@ public class OkSocketOptions implements IIOCoreOptions {
         okOptions.mReaderProtocol = new DefaultNormalReaderProtocol();
         okOptions.mMaxReadDataMB = 5;
         okOptions.mConnectTimeoutSecond = 3;
+        okOptions.mReconnectDelayMillis = 10 * 1000L;
+        okOptions.mReconnectMaxDelayMillis = 10 * 1000L;
+        okOptions.mReconnectDelayScale = 1.0d;
+        okOptions.mReconnectJitterRatio = 0.0d;
+        okOptions.mReconnectBackupSwitchThreshold = 12;
         okOptions.mWritePackageBytes = 100;
         okOptions.mReadPackageBytes = 50;
         okOptions.mReadByteOrder = ByteOrder.BIG_ENDIAN;
@@ -408,6 +580,9 @@ public class OkSocketOptions implements IIOCoreOptions {
         okOptions.mReconnectionManager = new DefaultReconnectManager();
         okOptions.mSSLConfig = null;
         okOptions.mOkSocketFactory = null;
+        okOptions.isSocketReuseAddress = true;
+        okOptions.isSocketKeepAlive = true;
+        okOptions.isSocketTcpNoDelay = true;
         okOptions.isCallbackInIndependentThread = true;
         okOptions.mCallbackThreadModeToken = null;
         return okOptions;

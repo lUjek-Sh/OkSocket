@@ -1,94 +1,67 @@
-# OkSocket Document
-An blocking socket client for Java application or Andorid.
+# OkSocket
 
-| [![License](https://img.shields.io/badge/license-Apache%202-green.svg)](https://www.apache.org/licenses/LICENSE-2.0) | [![Download](https://api.bintray.com/packages/xuuhaoo/maven/OkSocket/images/download.svg)](https://bintray.com/xuuhaoo/maven/OkSocket/_latestVersion) | [![Download](https://api.bintray.com/packages/xuuhaoo/maven/ServerImpl/images/download.svg)](https://bintray.com/xuuhaoo/maven/ServerImpl/_latestVersion) |
-| :------: | :------: | :------: |
-| `Open source licenses` | `Basic Socket Library` | `Socket Server Plugin Library` |
+Lightweight blocking TCP socket library for Java and Android.
 
+## Modules
 
-### 中文在线文档
-* 为了照顾中国同学的使用,提供了中文的说明文档:
-https://www.jianshu.com/p/8ee3ee766265
+- `socket-core` - low-level IO, packet reader/writer, protocol support.
+- `socket-common-interface` - shared interfaces and default protocol helpers.
+- `socket-client` - client-side connection management, reconnect, heartbeat.
+- `socket-server` - server-side accept loop and client session handling.
+- `app` - demo Android application, not required for `jar` builds.
 
-### OkEchoServer Open Source
-* Because the echo server already out of service.ofcause online server is not working properly, we decided to open source, hoping let more people who need point-to-point, mobile-to-mobile communication to get more help.
+## Features
 
-[OkEchoServer Source](https://github.com/xuuhaoo/OkEchoServer)
+- TCP client connections
+- TCP server support
+- Packet-based protocol with custom header parser
+- Reconnect handling
+- Heartbeat support
+- SSL socket support
 
-### OkSocket Introduce
-<font size=2>
-OkSocket is a Java library project designed to solve lightweight Socket communication, in order to enable developers to focus more on business logic, rather than TCP communication principles and some protocols. Make Socket communication more beautiful, suitable for large, medium and small Project, the rapid development of stable, maintainable, reliable Socket connection.
-</font>
+## Requirements
 
-### Feature
-- SocketClient Tcp IPV4 Connect
-- Socket Standard Protocol 
-- SocketClient Reconnect
-- SocketClient Heartbeat 
-- Socket Sticky Unpacking
-- Socket SSL Socket Support
-- Client Callback In Thread / Main Thread
-- Socket Client Redirect
-- SocketServer Support
+- JDK 17 or newer
+- Gradle wrapper included in the repository
 
+## Build JAR Files
 
-### Instructions
+Build all library jars from the project root:
 
-* OkSocket instruction manual [WIKI](https://github.com/xuuhaoo/OkSocket/wiki/What-Is-OkSocket-Is)
+### Windows
 
-* <font size=2>Add the following configuration to the build.gradle file under the project project.</font>
-    
-```groovy
-allprojects {
-    repositories {
-        jcenter()
-    }
-}
-```
-* <font size=2>Make sure you have already done with put JCenter into repositories blocking in project Gradle files than you need add the following configuration to the module's build.gradle file.</font>
-
-```groovy
-dependencies {
-	//Basic Socket client functionality
-	api 'com.tonystark.android:socket:latest.release'
-	//If you want to use server functionality, you need to compile the following libraries
-	api 'com.tonystark.android:socket-server:latest.release'
-}
+```powershell
+.\gradlew.bat :socket-core:jar :socket-common-interface:jar :socket-client:jar :socket-server:jar
 ```
 
-### Policy
+### macOS / Linux
 
-```
-   Copyright [2018] [徐昊]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+```bash
+./gradlew :socket-core:jar :socket-common-interface:jar :socket-client:jar :socket-server:jar
 ```
 
+Generated artifacts:
 
+- `socket-core/build/libs/socket-core.jar`
+- `socket-common-interface/build/libs/socket-common-interface.jar`
+- `socket-client/build/libs/socket-client.jar`
+- `socket-server/build/libs/socket-server.jar`
 
+You can also build a single module jar:
 
+```powershell
+.\gradlew.bat :socket-client:jar
+```
 
+## Runtime Notes
 
+These are regular module jars, not a fat jar.
 
+If you use:
 
+- `socket-client.jar`, also include `socket-common-interface.jar` and `socket-core.jar`
+- `socket-server.jar`, also include `socket-common-interface.jar` and `socket-core.jar`
 
+## License
 
-
-
-
-
-
-
-
-
-
+Apache License 2.0. See [LICENSE](LICENSE).

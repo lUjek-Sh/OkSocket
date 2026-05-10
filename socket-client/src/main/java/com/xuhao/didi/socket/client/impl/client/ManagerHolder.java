@@ -10,19 +10,19 @@ import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IServer
 import com.xuhao.didi.socket.common.interfaces.utils.SPIUtils;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * Created by xuhao on 2017/5/16.
  */
 public class ManagerHolder {
 
-    private volatile Map<ConnectionInfo, IConnectionManager> mConnectionManagerMap = new HashMap<>();
+    private final ConcurrentMap<ConnectionInfo, IConnectionManager> mConnectionManagerMap = new ConcurrentHashMap<>();
 
-    private volatile Map<Integer, IServerManagerPrivate> mServerManagerMap = new HashMap<>();
+    private final ConcurrentMap<Integer, IServerManagerPrivate<?>> mServerManagerMap = new ConcurrentHashMap<>();
 
     private static class InstanceHolder {
         private static final ManagerHolder INSTANCE = new ManagerHolder();
@@ -37,86 +37,92 @@ public class ManagerHolder {
     }
 
     public IServerManager getServer(int localPort) {
-        IServerManagerPrivate manager = mServerManagerMap.get(localPort);
-        if (manager == null) {
-            manager = (IServerManagerPrivate) SPIUtils.load(IServerManager.class);
-            if (manager == null) {
-                String err = "Oksocket.Server() load error. Server plug-in are required!" +
-                        " For details link to https://github.com/xuuhaoo/OkSocket";
-                SLog.e(err);
-                throw new IllegalStateException(err);
-            } else {
-                synchronized (mServerManagerMap) {
-                    mServerManagerMap.put(localPort, manager);
-                }
-                manager.initServerPrivate(localPort);
-                return manager;
-            }
+        IServerManagerPrivate<?> manager = mServerManagerMap.get(localPort);
+        if (manager != null) {
+            return manager;
         }
-        return manager;
+
+        IServerManagerPrivate<?> loadedManager = (IServerManagerPrivate<?>) SPIUtils.load(IServerManager.class);
+        if (loadedManager == null) {
+            String err = "Oksocket.Server() load error. Server plug-in are required!" +
+                    " For details link to https://github.com/xuuhaoo/OkSocket";
+            SLog.e(err);
+            throw new IllegalStateException(err);
+        }
+
+        IServerManagerPrivate<?> cachedManager = mServerManagerMap.putIfAbsent(localPort, loadedManager);
+        if (cachedManager == null) {
+            loadedManager.initServerPrivate(localPort);
+            return loadedManager;
+        }
+        return cachedManager;
     }
 
     public IConnectionManager getConnection(ConnectionInfo info) {
         IConnectionManager manager = mConnectionManagerMap.get(info);
         if (manager == null) {
             return getConnection(info, OkSocketOptions.getDefault());
-        } else {
-            return getConnection(info, manager.getOption());
         }
+        OkSocketOptions options = manager.getOption();
+        if (options == null || !options.isConnectionHolden()) {
+            mConnectionManagerMap.remove(info, manager);
+            return getConnection(info, OkSocketOptions.getDefault());
+        }
+        return getConnection(info, options);
     }
 
     public IConnectionManager getConnection(ConnectionInfo info, OkSocketOptions okOptions) {
+        OkSocketOptions options = okOptions == null ? OkSocketOptions.getDefault() : okOptions;
+        if (!options.isConnectionHolden()) {
+            mConnectionManagerMap.remove(info);
+            return createConnectionManager(info, options, false);
+        }
+
         IConnectionManager manager = mConnectionManagerMap.get(info);
         if (manager != null) {
-            if (!okOptions.isConnectionHolden()) {
-                synchronized (mConnectionManagerMap) {
-                    mConnectionManagerMap.remove(info);
-                }
-                return createNewManagerAndCache(info, okOptions);
-            } else {
-                manager.option(okOptions);
-            }
+            manager.option(options);
             return manager;
-        } else {
-            return createNewManagerAndCache(info, okOptions);
         }
+
+        AbsConnectionManager newManager = createConnectionManager(info, options, true);
+        IConnectionManager cachedManager = mConnectionManagerMap.putIfAbsent(info, newManager);
+        if (cachedManager != null) {
+            cachedManager.option(options);
+            return cachedManager;
+        }
+        return newManager;
     }
 
-    private IConnectionManager createNewManagerAndCache(ConnectionInfo info, OkSocketOptions okOptions) {
+    private AbsConnectionManager createConnectionManager(ConnectionInfo info, OkSocketOptions okOptions, boolean cacheEnabled) {
         AbsConnectionManager manager = new ConnectionManagerImpl(info);
         manager.option(okOptions);
         manager.setOnConnectionSwitchListener(new IConnectionSwitchListener() {
             @Override
             public void onSwitchConnectionInfo(IConnectionManager manager, ConnectionInfo oldInfo,
                                                ConnectionInfo newInfo) {
-                synchronized (mConnectionManagerMap) {
-                    mConnectionManagerMap.remove(oldInfo);
+                if (oldInfo != null) {
+                    mConnectionManagerMap.remove(oldInfo, manager);
+                }
+                if (cacheEnabled && manager.getOption() != null && manager.getOption().isConnectionHolden()) {
                     mConnectionManagerMap.put(newInfo, manager);
                 }
             }
         });
-        synchronized (mConnectionManagerMap) {
-            mConnectionManagerMap.put(info, manager);
-        }
         return manager;
     }
 
     protected List<IConnectionManager> getList() {
         List<IConnectionManager> list = new ArrayList<>();
-
-        Map<ConnectionInfo, IConnectionManager> map = new HashMap<>(mConnectionManagerMap);
-        Iterator<ConnectionInfo> it = map.keySet().iterator();
-        while (it.hasNext()) {
-            ConnectionInfo info = it.next();
-            IConnectionManager manager = map.get(info);
-            if (!manager.getOption().isConnectionHolden()) {
-                it.remove();
+        for (Map.Entry<ConnectionInfo, IConnectionManager> entry : mConnectionManagerMap.entrySet()) {
+            IConnectionManager manager = entry.getValue();
+            OkSocketOptions options = manager.getOption();
+            if (options == null || !options.isConnectionHolden()) {
+                mConnectionManagerMap.remove(entry.getKey(), manager);
                 continue;
             }
             list.add(manager);
         }
         return list;
     }
-
 
 }

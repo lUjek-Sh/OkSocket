@@ -1,41 +1,66 @@
-apply plugin: 'com.android.application'
+plugins {
+    id 'com.android.application'
+}
+
+def releaseStoreFile = rootProject.file('keystore/release2')
+def releaseStorePassword = providers.gradleProperty('RELEASE_STORE_PASSWORD').orNull
+def releaseKeyAlias = providers.gradleProperty('RELEASE_KEY_ALIAS').orNull
+def releaseKeyPassword = providers.gradleProperty('RELEASE_KEY_PASSWORD').orNull
+def hasReleaseSigning = releaseStoreFile.exists()
+        && releaseStorePassword
+        && releaseKeyAlias
+        && releaseKeyPassword
 
 android {
-    signingConfigs {
-        release {
-            keyAlias 'xuhao'
-            keyPassword '123456'
-            storeFile file('/Users/xuhao/Documents/publish_project/oksocket/keystore/release')
-            storePassword '123456'
-        }
-    }
-    compileSdkVersion 26
-    buildToolsVersion '26.0.2'
+    namespace = 'com.xuhao.didi.oksocket'
+    compileSdk = 36
+
     defaultConfig {
-        applicationId "com.xuhao.android.oksocket"
-        minSdkVersion 14
-        targetSdkVersion 26
-        versionCode 1
-        versionName "1.0"
+        applicationId = 'com.xuhao.android.oksocket'
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 1
+        versionName = '1.0'
     }
-    buildTypes {
-        release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                storeFile = releaseStoreFile
+                storePassword = releaseStorePassword
+            }
         }
     }
-    lintOptions {
-        abortOnError false
+
+    buildTypes {
+        debug {
+            minifyEnabled = false
+        }
+
+        release {
+            minifyEnabled = true
+            shrinkResources = true
+            proguardFiles(getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro')
+            signingConfig = hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError = false
     }
 }
 
 dependencies {
-    compile fileTree(include: ['*.jar'], dir: 'libs')
-    compile 'com.android.support:appcompat-v7:26.1.0'
-    compile 'com.android.support:design:26.1.0'
-    compile 'com.google.code.gson:gson:2.8.0'
-//        api 'com.tonystark.android:socket:latest.release'
-//        api 'com.tonystark.android:socket-server:latest.release'
-        api project(path: ':socket-client')
-        api project(path: ':socket-server')
+    implementation 'com.android.support:appcompat-v7:28.0.0'
+    implementation 'com.android.support:design:28.0.0'
+    implementation 'com.google.code.gson:gson:2.14.0'
+    implementation project(':socket-client')
+    implementation project(':socket-server')
 }

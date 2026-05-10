@@ -12,7 +12,6 @@ import com.xuhao.didi.core.utils.SLog;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -49,20 +48,14 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
             try {
                 byte[] sendBytes = sendable.parse();
                 int packageSize = mOkOptions.getWritePackageBytes();
+                if (packageSize <= 0) {
+                    throw new WriteException("write package bytes must be greater than 0");
+                }
                 int remainingCount = sendBytes.length;
-                ByteBuffer writeBuf = ByteBuffer.allocate(packageSize);
-                writeBuf.order(mOkOptions.getWriteByteOrder());
                 int index = 0;
                 while (remainingCount > 0) {
                     int realWriteLength = Math.min(packageSize, remainingCount);
-                    writeBuf.clear();
-                    writeBuf.rewind();
-                    writeBuf.put(sendBytes, index, realWriteLength);
-                    writeBuf.flip();
-                    byte[] writeArr = new byte[realWriteLength];
-                    writeBuf.get(writeArr);
-                    mOutputStream.write(writeArr);
-                    mOutputStream.flush();
+                    mOutputStream.write(sendBytes, index, realWriteLength);
 
                     if (SLog.isDebug()) {
                         byte[] forLogBytes = Arrays.copyOfRange(sendBytes, index, index + realWriteLength);
@@ -73,14 +66,16 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
                     index += realWriteLength;
                     remainingCount -= realWriteLength;
                 }
+                mOutputStream.flush();
                 if (sendable instanceof IPulseSendable) {
                     mStateSender.sendBroadcast(IOAction.ACTION_PULSE_REQUEST, sendable);
                 } else {
                     mStateSender.sendBroadcast(IOAction.ACTION_WRITE_COMPLETE, sendable);
                 }
+            } catch (WriteException e) {
+                throw e;
             } catch (Exception e) {
-                WriteException writeException = new WriteException(e);
-                throw writeException;
+                throw new WriteException(e);
             }
             return true;
         }

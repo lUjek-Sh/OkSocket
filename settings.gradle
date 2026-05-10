@@ -1,1 +1,29 @@
-include ':app', ':socket-core', ':socket-client', ':socket-common-interface', ':socket-server'
+import org.gradle.api.initialization.resolve.RepositoriesMode
+
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'OkSocket'
+
+include ':app'
+include ':socket-core'
+include ':socket-client'
+include ':socket-common-interface'
+include ':socket-server'

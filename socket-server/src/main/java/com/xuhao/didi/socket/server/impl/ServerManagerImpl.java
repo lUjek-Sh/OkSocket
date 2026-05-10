@@ -12,8 +12,10 @@ import com.xuhao.didi.socket.server.impl.clientpojo.ClientImpl;
 import com.xuhao.didi.socket.server.impl.clientpojo.ClientPoolImpl;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 
 public class ServerManagerImpl extends AbsServerRegisterProxy implements IServerManagerPrivate<OkServerOptions> {
 
@@ -75,8 +77,9 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
         }
         try {
             mServerOptions = options;
-            mServerSocket = new ServerSocket(mServerPort);
+            mServerSocket = new ServerSocket();
             configuration(mServerSocket);
+            mServerSocket.bind(new InetSocketAddress(mServerPort), Math.max(1, mServerOptions.getConnectCapacity()));
             mAcceptThread = new AcceptThread("server accepting in " + mServerPort);
             mAcceptThread.start();
         } catch (Exception e) {
@@ -94,7 +97,7 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
 
     @Override
     public IClientPool<String, IClient> getClientPool() {
-        return (IClientPool)mClientPoolImpl;
+        return (IClientPool) mClientPoolImpl;
     }
 
     private class AcceptThread extends AbsLoopThread {
@@ -113,6 +116,7 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
         @Override
         protected void runInLoopThread() throws Exception {
             Socket socket = mServerSocket.accept();
+            configure(socket);
             ClientImpl client = new ClientImpl(socket, mServerOptions);
             client.setClientPool(mClientPoolImpl);
             client.setServerStateSender(ServerManagerImpl.this);
@@ -127,9 +131,26 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
         }
     }
 
-
     private void configuration(ServerSocket serverSocket) {
-        //TODO 待细化配置
+        try {
+            serverSocket.setReuseAddress(mServerOptions.isServerSocketReuseAddress());
+        } catch (SocketException e) {
+            throw new IllegalStateException("Unable to configure server socket", e);
+        }
+    }
+
+    private void configure(Socket socket) {
+        try {
+            socket.setReuseAddress(mServerOptions.isClientSocketReuseAddress());
+            socket.setKeepAlive(mServerOptions.isClientSocketKeepAlive());
+            socket.setTcpNoDelay(mServerOptions.isClientSocketTcpNoDelay());
+        } catch (SocketException e) {
+            try {
+                socket.close();
+            } catch (IOException ignored) {
+            }
+            throw new IllegalStateException("Unable to configure client socket", e);
+        }
     }
 
     @Override
@@ -149,8 +170,10 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
 
         mServerSocket = null;
         mClientPoolImpl = null;
-        mAcceptThread.shutdown(new InitiativeDisconnectException());
-        mAcceptThread = null;
+        if (mAcceptThread != null) {
+            mAcceptThread.shutdown(new InitiativeDisconnectException());
+            mAcceptThread = null;
+        }
 
         sendBroadcast(IAction.Server.ACTION_SERVER_ALLREADY_SHUTDOWN);
     }

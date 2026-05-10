@@ -13,12 +13,8 @@ import com.xuhao.didi.socket.common.interfaces.basic.AbsLoopThread;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.dispatcher.IRegister;
 
 import java.io.Serializable;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.ReentrantLock;
 
 import static com.xuhao.didi.core.iocore.interfaces.IOAction.ACTION_PULSE_REQUEST;
 import static com.xuhao.didi.core.iocore.interfaces.IOAction.ACTION_READ_COMPLETE;
@@ -55,7 +51,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
     /**
      * 行为回调集合
      */
-    private volatile List<ISocketActionListener> mResponseHandlerList = new ArrayList<>();
+    private final CopyOnWriteArrayList<ISocketActionListener> mResponseHandlerList = new CopyOnWriteArrayList<>();
     /**
      * 连接信息
      */
@@ -67,9 +63,6 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
     /**
      * 公平锁,虽然没啥卵用公平,因为使用了tryLock
      */
-    private ReentrantLock mLock = new ReentrantLock(true);
-
-
     public ActionDispatcher(ConnectionInfo info, IConnectionManager manager) {
         mManager = manager;
         mConnectionInfo = info;
@@ -78,20 +71,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
     @Override
     public IConnectionManager registerReceiver(final ISocketActionListener socketResponseHandler) {
         if (socketResponseHandler != null) {
-            try {
-                while (true) {
-                    if (mLock.tryLock(1, TimeUnit.SECONDS)) {
-                        if (!mResponseHandlerList.contains(socketResponseHandler)) {
-                            mResponseHandlerList.add(socketResponseHandler);
-                        }
-                        break;
-                    }
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                mLock.unlock();
-            }
+            mResponseHandlerList.addIfAbsent(socketResponseHandler);
         }
         return mManager;
     }
@@ -99,18 +79,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
     @Override
     public IConnectionManager unRegisterReceiver(ISocketActionListener socketResponseHandler) {
         if (socketResponseHandler != null) {
-            try {
-                while (true) {
-                    if (mLock.tryLock(1, TimeUnit.SECONDS)) {
-                        mResponseHandlerList.remove(socketResponseHandler);
-                        break;
-                    }
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                mLock.unlock();
-            }
+            mResponseHandlerList.remove(socketResponseHandler);
         }
         return mManager;
     }
@@ -180,7 +149,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
             case ACTION_WRITE_THREAD_SHUTDOWN:
             case ACTION_READ_THREAD_SHUTDOWN: {
                 try {
-                    Exception exception = (Exception) arg;
+                    Exception exception = resolveShutdownCallbackException(action, (Exception) arg, responseHandler);
                     responseHandler.onSocketIOThreadShutdown(action, exception);
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -218,23 +187,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
             ActionBean bean = new ActionBean(action, serializable, this);
             ACTION_QUEUE.offer(bean);
         } else if (!option.isCallbackInIndependentThread()) {//IO线程里进行回调
-            try {
-                while (true) {
-                    if (mLock.tryLock(1, TimeUnit.SECONDS)) {
-                        List<ISocketActionListener> copyData = new ArrayList<>(mResponseHandlerList);
-                        Iterator<ISocketActionListener> it = copyData.iterator();
-                        while (it.hasNext()) {
-                            ISocketActionListener listener = it.next();
-                            this.dispatchActionToListener(action, serializable, listener);
-                        }
-                        break;
-                    }
-                }
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            } finally {
-                mLock.unlock();
-            }
+            dispatchToAllListeners(action, serializable);
         } else {
             SLog.e("ActionDispatcher error action:" + action + " is not dispatch");
         }
@@ -249,6 +202,43 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
         mConnectionInfo = connectionInfo;
     }
 
+    private void dispatchToAllListeners(String action, Serializable serializable) {
+        dispatchToListeners(this, action, serializable);
+    }
+
+    private static void dispatchToListeners(ActionDispatcher dispatcher, String action, Serializable serializable) {
+        dispatchListeners(dispatcher, action, serializable, true);
+        dispatchListeners(dispatcher, action, serializable, false);
+    }
+
+    private static void dispatchListeners(ActionDispatcher dispatcher,
+                                          String action,
+                                          Serializable serializable,
+                                          boolean internalListenersOnly) {
+        for (ISocketActionListener listener : dispatcher.mResponseHandlerList) {
+            boolean isInternalListener = listener instanceof ActionHandler;
+            if (isInternalListener != internalListenersOnly) {
+                continue;
+            }
+            dispatcher.dispatchActionToListener(action, serializable, listener);
+        }
+    }
+
+    private Exception resolveShutdownCallbackException(String action,
+                                                       Exception exception,
+                                                       ISocketActionListener responseHandler) {
+        if (responseHandler instanceof ActionHandler) {
+            return exception;
+        }
+        if (!ACTION_WRITE_THREAD_SHUTDOWN.equals(action)) {
+            return exception;
+        }
+        if (!mManager.isDisconnecting()) {
+            return exception;
+        }
+        return SocketExceptionUtils.isConnectionShutdownException(exception) ? null : exception;
+    }
+
     /**
      * 分发线程
      */
@@ -261,15 +251,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
         protected void runInLoopThread() throws Exception {
             ActionBean actionBean = ACTION_QUEUE.take();
             if (actionBean != null && actionBean.mDispatcher != null) {
-                ActionDispatcher actionDispatcher = actionBean.mDispatcher;
-                synchronized (actionDispatcher.mResponseHandlerList) {
-                    List<ISocketActionListener> copyData = new ArrayList<>(actionDispatcher.mResponseHandlerList);
-                    Iterator<ISocketActionListener> it = copyData.iterator();
-                    while (it.hasNext()) {
-                        ISocketActionListener listener = it.next();
-                        actionDispatcher.dispatchActionToListener(actionBean.mAction, actionBean.arg, listener);
-                    }
-                }
+                dispatchToListeners(actionBean.mDispatcher, actionBean.mAction, actionBean.arg);
             }
         }
 
@@ -307,15 +289,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
         @Override
         public void run() {
             if (mActionBean != null && mActionBean.mDispatcher != null) {
-                ActionDispatcher actionDispatcher = mActionBean.mDispatcher;
-                synchronized (actionDispatcher.mResponseHandlerList) {
-                    List<ISocketActionListener> copyData = new ArrayList<>(actionDispatcher.mResponseHandlerList);
-                    Iterator<ISocketActionListener> it = copyData.iterator();
-                    while (it.hasNext()) {
-                        ISocketActionListener listener = it.next();
-                        actionDispatcher.dispatchActionToListener(mActionBean.mAction, mActionBean.arg, listener);
-                    }
-                }
+                dispatchToListeners(mActionBean.mDispatcher, mActionBean.mAction, mActionBean.arg);
             }
         }
     }

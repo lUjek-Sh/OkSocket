@@ -1,35 +1,39 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+plugins {
+    id 'com.android.application' version '8.13.2' apply false
+}
 
-buildscript {
-    repositories {
-//        maven {
-//            url 'https://dl.bintray.com/xuuhaoo/maven'
-//        }
-        jcenter()
-        google()
+group = findProperty('GROUP_ID') ?: 'com.tonystark.android'
+version = findProperty('VERSION') ?: '4.2.3'
 
-    }
-    dependencies {
-        classpath 'com.android.tools.build:gradle:3.3.2'
-        // 添加上传到jcenter所需的插件
-        classpath 'com.github.dcendents:android-maven-gradle-plugin:2.0'
-        classpath 'com.jfrog.bintray.gradle:gradle-bintray-plugin:1.8.4'
+subprojects {
+    group = rootProject.group
+    version = rootProject.version
+
+    plugins.withId('java-library') {
+        java {
+            toolchain {
+                languageVersion = JavaLanguageVersion.of(17)
+            }
+            withSourcesJar()
+            withJavadocJar()
+        }
+
+        tasks.withType(JavaCompile).configureEach {
+            options.encoding = 'UTF-8'
+            options.release = 8
+        }
+
+        tasks.withType(Jar).configureEach {
+            manifest {
+                attributes(
+                        'Implementation-Title': project.name,
+                        'Implementation-Version': project.version
+                )
+            }
+        }
     }
 }
 
-
-
-allprojects {
-    repositories {
-//        maven {
-//            url 'https://dl.bintray.com/xuuhaoo/maven'
-//        }
-        jcenter()
-        google()
-    }
-}
-
-
-task clean(type: Delete) {
-    delete rootProject.buildDir
+tasks.register('clean', Delete) {
+    delete rootProject.layout.buildDirectory
 }
