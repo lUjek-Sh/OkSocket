@@ -1,63 +1,73 @@
 package com.xuhao.didi.socket.server.impl.clientpojo;
 
+import com.xuhao.didi.socket.server.impl.OkServerOptions;
 
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentSkipListMap;
 
 public abstract class AbsClientPool<K, V> {
-    private volatile ConcurrentSkipListMap<K, V> mHashMap = new ConcurrentSkipListMap<>();
+    private final LinkedHashMap<K, V> mCache = new LinkedHashMap<>();
+    private final int mCapacity;
+    private final OkServerOptions.ClientPoolOverflowStrategy mOverflowStrategy;
 
-    private int mCapacity;
-
-    public AbsClientPool(int capacity) {
+    public AbsClientPool(int capacity, OkServerOptions.ClientPoolOverflowStrategy overflowStrategy) {
         mCapacity = capacity;
+        mOverflowStrategy = overflowStrategy;
     }
 
     synchronized void set(K key, V value) {
-        V old = mHashMap.get(key);
+        V old = mCache.get(key);
         if (old != null) {
             onCacheDuplicate(key, old);
         }
-        if (mCapacity == mHashMap.size()) {
-            Map.Entry<K, V> entry = getTail();
-            onCacheFull(entry.getKey(), entry.getValue());
-        }
-
-        if (mHashMap.containsKey(key)) {
+        if (mCache.containsKey(key)) {
             return;
         }
 
-        if (mCapacity == mHashMap.size()) {
+        if (mCapacity == mCache.size()) {
+            if (mOverflowStrategy == OkServerOptions.ClientPoolOverflowStrategy.EVICT_OLDEST_CLIENT) {
+                Map.Entry<K, V> oldest = getHead();
+                if (oldest != null) {
+                    mCache.remove(oldest.getKey());
+                    onCacheEvicted(oldest.getKey(), oldest.getValue(), key, value);
+                }
+            } else {
+                onCacheRejected(key, value);
+                return;
+            }
+        }
+
+        if (mCapacity == mCache.size()) {
             return;
         }
-        mHashMap.put(key, value);
+        mCache.put(key, value);
     }
 
-     V get(K key) {
-        return mHashMap.get(key);
+    synchronized V get(K key) {
+        return mCache.get(key);
     }
 
     synchronized void remove(K key) {
-        mHashMap.remove(key);
-        if (mHashMap.isEmpty()) {
+        mCache.remove(key);
+        if (mCache.isEmpty()) {
             onCacheEmpty();
         }
     }
 
     synchronized void removeAll() {
-        mHashMap.clear();
+        mCache.clear();
     }
 
-    int size() {
-        return mHashMap.size();
+    synchronized int size() {
+        return mCache.size();
     }
 
     synchronized void echoRun(Echo echo) {
         if (echo == null) {
             return;
         }
-        Iterator<Map.Entry<K, V>> iterator = mHashMap.entrySet().iterator();
+        Iterator<Map.Entry<K, V>> iterator = mCache.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<K, V> node = iterator.next();
             echo.onEcho(node.getKey(), node.getValue());
@@ -68,19 +78,14 @@ public abstract class AbsClientPool<K, V> {
         void onEcho(K key, V value);
     }
 
-    private Map.Entry<K, V> getTail() {
-        if (mHashMap.isEmpty()) {
-            return null;
-        }
-        Iterator<Map.Entry<K, V>> iterator = mHashMap.entrySet().iterator();
-        Map.Entry<K, V> tail = null;
-        while (iterator.hasNext()) {
-            tail = iterator.next();
-        }
-        return tail;
+    private Map.Entry<K, V> getHead() {
+        Iterator<Map.Entry<K, V>> iterator = mCache.entrySet().iterator();
+        return iterator.hasNext() ? iterator.next() : null;
     }
 
-    abstract void onCacheFull(K key, V lastOne);
+    abstract void onCacheRejected(K key, V newOne);
+
+    abstract void onCacheEvicted(K key, V oldOne, K incomingKey, V incomingValue);
 
     abstract void onCacheDuplicate(K key, V oldOne);
 

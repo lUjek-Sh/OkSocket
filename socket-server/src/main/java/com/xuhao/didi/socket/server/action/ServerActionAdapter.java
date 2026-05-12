@@ -9,7 +9,10 @@ import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IServer
 public abstract class ServerActionAdapter implements IServerActionListener {
     @Override
     public void onServerListening(int serverPort) {
+    }
 
+    @Override
+    public void onServerListenFailed(int serverPort, Throwable throwable) {
     }
 
     @Override

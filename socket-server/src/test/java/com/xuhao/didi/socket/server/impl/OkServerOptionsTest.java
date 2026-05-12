@@ -19,6 +19,7 @@ public class OkServerOptionsTest {
                 .setClientSocketReuseAddress(false)
                 .setClientSocketKeepAlive(false)
                 .setClientSocketTcpNoDelay(false)
+                .setClientPoolOverflowStrategy(OkServerOptions.ClientPoolOverflowStrategy.EVICT_OLDEST_CLIENT)
                 .build();
 
         assertNotSame(source, copy);
@@ -28,6 +29,8 @@ public class OkServerOptionsTest {
         assertFalse(copy.isClientSocketReuseAddress());
         assertFalse(copy.isClientSocketKeepAlive());
         assertFalse(copy.isClientSocketTcpNoDelay());
+        assertEquals(OkServerOptions.ClientPoolOverflowStrategy.EVICT_OLDEST_CLIENT,
+                copy.getClientPoolOverflowStrategy());
     }
 
     @Test(expected = IllegalArgumentException.class)
@@ -48,6 +51,13 @@ public class OkServerOptionsTest {
     public void buildShouldRejectNullReaderProtocol() {
         new OkServerOptions.Builder()
                 .setReaderProtocol(null)
+                .build();
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void buildShouldRejectNullClientPoolOverflowStrategy() {
+        new OkServerOptions.Builder()
+                .setClientPoolOverflowStrategy(null)
                 .build();
     }
 }

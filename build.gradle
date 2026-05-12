@@ -23,12 +23,84 @@ subprojects {
             options.release = 8
         }
 
+        tasks.withType(Javadoc).configureEach {
+            options.encoding = 'UTF-8'
+            options.charSet = 'UTF-8'
+            options.docEncoding = 'UTF-8'
+            if (JavaVersion.current().isJava9Compatible()) {
+                options.addBooleanOption('html5', true)
+            }
+        }
+
         tasks.withType(Jar).configureEach {
             manifest {
                 attributes(
                         'Implementation-Title': project.name,
                         'Implementation-Version': project.version
                 )
+            }
+        }
+    }
+
+    plugins.withId('maven-publish') {
+        publishing {
+            publications {
+                mavenJava(MavenPublication) {
+                    artifactId = project.findProperty('ARTIFACT_ID') ?: project.name
+                    from components.java
+                    versionMapping {
+                        usage('java-api') {
+                            fromResolutionOf('runtimeClasspath')
+                        }
+                        usage('java-runtime') {
+                            fromResolutionResult()
+                        }
+                    }
+                    pom {
+                        name = project.findProperty('NAME') ?: project.name
+                        description = project.findProperty('POM_DESCRIPTION')
+                                ?: "OkSocket ${project.name} module"
+                        url = rootProject.findProperty('POM_URL') ?: 'https://github.com/lUjek-Sh/OkSocket'
+                        licenses {
+                            license {
+                                name = rootProject.findProperty('POM_LICENSE_NAME') ?: 'MIT License'
+                                url = rootProject.findProperty('POM_LICENSE_URL') ?: 'https://opensource.org/license/mit'
+                            }
+                        }
+                        developers {
+                            developer {
+                                id = rootProject.findProperty('POM_DEVELOPER_ID') ?: 'lUjek-Sh'
+                                name = rootProject.findProperty('POM_DEVELOPER_NAME') ?: 'lUjek-Sh'
+                            }
+                        }
+                        scm {
+                            url = rootProject.findProperty('POM_SCM_URL') ?: 'https://github.com/lUjek-Sh/OkSocket'
+                            connection = rootProject.findProperty('POM_SCM_CONNECTION')
+                                    ?: 'scm:git:https://github.com/lUjek-Sh/OkSocket.git'
+                            developerConnection = rootProject.findProperty('POM_SCM_DEV_CONNECTION')
+                                    ?: 'scm:git:ssh://git@github.com/lUjek-Sh/OkSocket.git'
+                        }
+                    }
+                }
+            }
+            repositories {
+                maven {
+                    name = 'localStaging'
+                    def releasesRepoUrl = rootProject.layout.buildDirectory.dir('repos/releases')
+                    def snapshotsRepoUrl = rootProject.layout.buildDirectory.dir('repos/snapshots')
+                    url = version.toString().endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
+                }
+            }
+        }
+    }
+
+    plugins.withId('signing') {
+        def signingKey = providers.gradleProperty('signingKey').orNull
+        def signingPassword = providers.gradleProperty('signingPassword').orNull
+        if (signingKey && signingPassword) {
+            signing {
+                useInMemoryPgpKeys(signingKey, signingPassword)
+                sign publishing.publications.mavenJava
             }
         }
     }
@@ -48,6 +120,13 @@ tasks.register('libraryTest') {
 
 tasks.register('libraryCheck') {
     dependsOn 'libraryJar', 'libraryTest'
+}
+
+tasks.register('libraryPublish') {
+    dependsOn ':socket-core:publishAllPublicationsToLocalStagingRepository',
+            ':socket-common-interface:publishAllPublicationsToLocalStagingRepository',
+            ':socket-client:publishAllPublicationsToLocalStagingRepository',
+            ':socket-server:publishAllPublicationsToLocalStagingRepository'
 }
 
 tasks.register('demoCheck') {

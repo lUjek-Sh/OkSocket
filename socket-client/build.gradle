@@ -1,11 +1,15 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
+    id 'signing'
 }
 
 dependencies {
     api project(':socket-core')
     api project(':socket-common-interface')
     testImplementation project(':socket-server')
+    testImplementation 'org.bouncycastle:bcpkix-jdk18on:1.84'
+    testImplementation 'org.bouncycastle:bcprov-jdk18on:1.84'
     testImplementation 'junit:junit:4.13.2'
 }
 

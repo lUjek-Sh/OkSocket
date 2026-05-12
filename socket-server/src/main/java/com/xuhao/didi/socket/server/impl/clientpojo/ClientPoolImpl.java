@@ -4,11 +4,12 @@ import com.xuhao.didi.core.iocore.interfaces.ISendable;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IClient;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IClientPool;
 import com.xuhao.didi.socket.server.exceptions.CacheException;
+import com.xuhao.didi.socket.server.impl.OkServerOptions;
 
 public class ClientPoolImpl extends AbsClientPool<String, IClient> implements IClientPool<IClient, String> {
 
-    public ClientPoolImpl(int capacity) {
-        super(capacity);
+    public ClientPoolImpl(int capacity, OkServerOptions.ClientPoolOverflowStrategy overflowStrategy) {
+        super(capacity, overflowStrategy);
     }
 
     @Override
@@ -55,9 +56,13 @@ public class ClientPoolImpl extends AbsClientPool<String, IClient> implements IC
     }
 
     @Override
-    void onCacheFull(String key, IClient lastOne) {
-        lastOne.disconnect(new CacheException("cache is full,you need remove"));
-        unCache(lastOne);
+    void onCacheRejected(String key, IClient newOne) {
+        newOne.disconnect(new CacheException("cache is full,new client was rejected"));
+    }
+
+    @Override
+    void onCacheEvicted(String key, IClient oldOne, String incomingKey, IClient incomingValue) {
+        oldOne.disconnect(new CacheException("cache is full,oldest client was evicted"));
     }
 
     @Override

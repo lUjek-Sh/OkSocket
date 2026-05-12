@@ -1,5 +1,7 @@
 package com.xuhao.didi.socket.client.sdk.client;
 
+import java.util.Arrays;
+
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
@@ -7,63 +9,64 @@ import javax.net.ssl.TrustManager;
 /**
  * Created by Tony on 2017/12/27.
  */
-
-public class OkSocketSSLConfig {
+public final class OkSocketSSLConfig {
     /**
      * 安全协议名称(缺省为 SSL)
      */
-    private String mProtocol;
+    private final String mProtocol;
     /**
      * 信任证书管理器(缺省为 X509)
      */
-    private TrustManager[] mTrustManagers;
+    private final TrustManager[] mTrustManagers;
     /**
      * 证书秘钥管理器(缺省为 null)
      */
-    private KeyManager[] mKeyManagers;
+    private final KeyManager[] mKeyManagers;
     /**
      * 自定义 SSLFactory(缺省为 null)
      */
-    private SSLSocketFactory mCustomSSLFactory;
+    private final SSLSocketFactory mCustomSSLFactory;
 
-    private OkSocketSSLConfig() {
-
+    private OkSocketSSLConfig(Builder builder) {
+        mProtocol = builder.mProtocol;
+        mTrustManagers = copyOf(builder.mTrustManagers);
+        mKeyManagers = copyOf(builder.mKeyManagers);
+        mCustomSSLFactory = builder.mCustomSSLFactory;
     }
 
     public static class Builder {
-        private OkSocketSSLConfig mConfig;
-
-        public Builder() {
-            mConfig = new OkSocketSSLConfig();
-        }
+        private String mProtocol;
+        private TrustManager[] mTrustManagers;
+        private KeyManager[] mKeyManagers;
+        private SSLSocketFactory mCustomSSLFactory;
 
         public Builder setProtocol(String protocol) {
-            mConfig.mProtocol = protocol;
+            mProtocol = protocol;
             return this;
         }
 
         public Builder setTrustManagers(TrustManager[] trustManagers) {
-            mConfig.mTrustManagers = trustManagers;
+            mTrustManagers = copyOf(trustManagers);
             return this;
         }
 
         public Builder setKeyManagers(KeyManager[] keyManagers) {
-            mConfig.mKeyManagers = keyManagers;
+            mKeyManagers = copyOf(keyManagers);
             return this;
         }
 
         public Builder setCustomSSLFactory(SSLSocketFactory customSSLFactory) {
-            mConfig.mCustomSSLFactory = customSSLFactory;
+            mCustomSSLFactory = customSSLFactory;
             return this;
         }
 
         public OkSocketSSLConfig build() {
-            return mConfig;
+            return new OkSocketSSLConfig(this);
         }
     }
 
     public KeyManager[] getKeyManagers() {
-        return mKeyManagers;
+        return copyOf(mKeyManagers);
     }
 
     public String getProtocol() {
@@ -71,10 +74,18 @@ public class OkSocketSSLConfig {
     }
 
     public TrustManager[] getTrustManagers() {
-        return mTrustManagers;
+        return copyOf(mTrustManagers);
     }
 
     public SSLSocketFactory getCustomSSLFactory() {
         return mCustomSSLFactory;
+    }
+
+    private static TrustManager[] copyOf(TrustManager[] source) {
+        return source == null ? null : Arrays.copyOf(source, source.length);
+    }
+
+    private static KeyManager[] copyOf(KeyManager[] source) {
+        return source == null ? null : Arrays.copyOf(source, source.length);
     }
 }

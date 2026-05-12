@@ -13,7 +13,6 @@ import com.xuhao.didi.socket.client.sdk.client.action.IAction;
 import com.xuhao.didi.socket.client.sdk.client.connection.AbsReconnectionManager;
 import com.xuhao.didi.socket.client.sdk.client.connection.IConnectionManager;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.IIOManager;
-import com.xuhao.didi.socket.common.interfaces.default_protocol.DefaultX509ProtocolTrustManager;
 import com.xuhao.didi.socket.common.interfaces.utils.TextUtils;
 
 import java.io.IOException;
@@ -21,8 +20,10 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketException;
 import java.security.SecureRandom;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 
@@ -32,44 +33,16 @@ import javax.net.ssl.TrustManager;
 public class ConnectionManagerImpl extends AbsConnectionManager {
     static final String DEFAULT_SSL_PROTOCOL = "TLS";
 
-    /**
-     * 套接字
-     */
     private volatile Socket mSocket;
-    /**
-     * socket参配项
-     */
     private volatile OkSocketOptions mOptions;
-    /**
-     * IO通讯管理器
-     */
     private IIOManager mManager;
-    /**
-     * 连接线程
-     */
     private Thread mConnectThread;
-    /**
-     * Socket行为监听器
-     */
     private ActionHandler mActionHandler;
-    /**
-     * 脉搏管理器
-     */
     private volatile PulseManager mPulseManager;
-    /**
-     * 重新连接管理器
-     */
     private volatile AbsReconnectionManager mReconnectionManager;
-    /**
-     * 能否连接
-     */
-    private volatile boolean isConnectionPermitted = true;
-    /**
-     * 是否正在断开
-     */
-    private volatile boolean isDisconnecting = false;
+    private final AtomicReference<ConnectionState> mConnectionState =
+            new AtomicReference<>(ConnectionState.IDLE);
     private volatile Exception mDisconnectCause;
-
 
     protected ConnectionManagerImpl(ConnectionInfo info) {
         this(info, null);
@@ -93,20 +66,21 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
     @Override
     public synchronized void connect() {
         SLog.i("Thread name:" + Thread.currentThread().getName() + " id:" + Thread.currentThread().getId());
-        if (!isConnectionPermitted) {
+
+        ConnectionState currentState = mConnectionState.get();
+        if (currentState == ConnectionState.CONNECTING || currentState == ConnectionState.DISCONNECTING) {
             return;
         }
-        isConnectionPermitted = false;
-        if (isConnect()) {
-            isConnectionPermitted = true;
+        if (currentState == ConnectionState.CONNECTED && isConnect()) {
             return;
         }
-        isDisconnecting = false;
+
         mDisconnectCause = null;
         if (mRemoteConnectionInfo == null) {
-            isConnectionPermitted = true;
+            mConnectionState.set(ConnectionState.DISCONNECTED);
             throw new UnConnectException("连接参数为空,检查连接参数");
         }
+
         if (mActionHandler != null) {
             mActionHandler.detach(this);
             SLog.i("mActionHandler is detached.");
@@ -126,6 +100,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             SLog.i("ReconnectionManager is attached.");
         }
 
+        mConnectionState.set(ConnectionState.CONNECTING);
         String info = mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort();
         mConnectThread = new ConnectionThread(" Connect thread for " + info);
         mConnectThread.setDaemon(true);
@@ -133,50 +108,25 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
     }
 
     private synchronized Socket getSocketByConfig() throws Exception {
-        //自定义socket操作
         if (mOptions.getOkSocketFactory() != null) {
             return mOptions.getOkSocketFactory().createSocket(mRemoteConnectionInfo, mOptions);
         }
 
-        //默认操作
         OkSocketSSLConfig config = mOptions.getSSLConfig();
         if (config == null) {
             return new Socket();
         }
 
         SSLSocketFactory factory = config.getCustomSSLFactory();
-        if (factory == null) {
-            String protocol = resolveSslProtocol(config);
-
-            TrustManager[] trustManagers = config.getTrustManagers();
-            if (trustManagers == null || trustManagers.length == 0) {
-                //缺省信任所有证书
-                trustManagers = new TrustManager[]{new DefaultX509ProtocolTrustManager()};
-            }
-
-            try {
-                SSLContext sslContext = SSLContext.getInstance(protocol);
-                sslContext.init(config.getKeyManagers(), trustManagers, new SecureRandom());
-                return sslContext.getSocketFactory().createSocket();
-            } catch (Exception e) {
-                if (mOptions.isDebug()) {
-                    SLog.e("Failed to create SSL socket from protocol " + protocol, e);
-                }
-                SLog.e(e.getMessage());
-                return new Socket();
-            }
-
-        } else {
-            try {
-                return factory.createSocket();
-            } catch (IOException e) {
-                if (mOptions.isDebug()) {
-                    SLog.e("Failed to create SSL socket from custom factory", e);
-                }
-                SLog.e(e.getMessage());
-                return new Socket();
-            }
+        if (factory != null) {
+            return factory.createSocket();
         }
+
+        String protocol = resolveSslProtocol(config);
+        TrustManager[] trustManagers = normalizeTrustManagers(config.getTrustManagers());
+        SSLContext sslContext = SSLContext.getInstance(protocol);
+        sslContext.init(config.getKeyManagers(), trustManagers, new SecureRandom());
+        return sslContext.getSocketFactory().createSocket();
     }
 
     static String resolveSslProtocol(OkSocketSSLConfig config) {
@@ -187,17 +137,18 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
     }
 
     private class ConnectionThread extends Thread {
-        public ConnectionThread(String name) {
+        ConnectionThread(String name) {
             super(name);
         }
 
         @Override
         public void run() {
+            boolean connectSucceeded = false;
             try {
                 try {
                     mSocket = getSocketByConfig();
                     prepareSocketBeforeConnect(mSocket);
-                    if (isManualDisconnectInProgress()) {
+                    if (isDisconnectInProgress()) {
                         closeSocketQuietly(mSocket);
                         return;
                     }
@@ -209,20 +160,34 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                     }
                     throw new UnConnectException("Create socket failed.", e);
                 }
+
                 if (mLocalConnectionInfo != null) {
                     SLog.i("try bind: " + mLocalConnectionInfo.getIp() + " port:" + mLocalConnectionInfo.getPort());
                     mSocket.bind(new InetSocketAddress(mLocalConnectionInfo.getIp(), mLocalConnectionInfo.getPort()));
                 }
-                if (isManualDisconnectInProgress()) {
+                if (isDisconnectInProgress()) {
                     closeSocketQuietly(mSocket);
                     return;
                 }
 
                 SLog.i("Start connect: " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " socket server...");
-                mSocket.connect(new InetSocketAddress(mRemoteConnectionInfo.getIp(), mRemoteConnectionInfo.getPort()), mOptions.getConnectTimeoutSecond() * 1000);
-                //关闭Nagle算法,无论TCP数据报大小,立即发送
+                mSocket.connect(new InetSocketAddress(mRemoteConnectionInfo.getIp(), mRemoteConnectionInfo.getPort()),
+                        mOptions.getConnectTimeoutSecond() * 1000);
                 prepareSocketAfterConnect(mSocket);
+                if (isDisconnectInProgress()) {
+                    closeSocketQuietly(mSocket);
+                    return;
+                }
+
                 resolveManager();
+                if (isDisconnectInProgress()) {
+                    closeManagerQuietly(mDisconnectCause);
+                    closeSocketQuietly(mSocket);
+                    return;
+                }
+
+                mConnectionState.set(ConnectionState.CONNECTED);
+                connectSucceeded = true;
                 sendBroadcast(IAction.ACTION_CONNECTION_SUCCESS);
                 SLog.i("Socket server: " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect successful!");
             } catch (Exception e) {
@@ -233,18 +198,20 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 if (shouldSuppressConnectionFailure()) {
                     SLog.i("Connection attempt cancelled manually for " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort());
                 } else {
+                    mConnectionState.set(ConnectionState.DISCONNECTED);
                     SLog.e("Socket server " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect failed! error msg:" + e.getMessage());
                     sendBroadcast(IAction.ACTION_CONNECTION_FAILED, exception);
                 }
             } finally {
-                isConnectionPermitted = true;
+                if (!connectSucceeded && mConnectionState.get() == ConnectionState.CONNECTING) {
+                    mConnectionState.set(ConnectionState.DISCONNECTED);
+                }
             }
         }
     }
 
     private void resolveManager() throws IOException {
         mPulseManager = new PulseManager(this, mOptions);
-
         mManager = new IOThreadManager(
                 mSocket.getInputStream(),
                 mSocket.getOutputStream(),
@@ -256,10 +223,20 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
     @Override
     public void disconnect(Exception exception) {
         synchronized (this) {
-            if (isDisconnecting) {
+            if (isDisconnectInProgress()) {
                 return;
             }
-            isDisconnecting = true;
+
+            if (mConnectionState.get() == ConnectionState.IDLE
+                    && mSocket == null
+                    && mConnectThread == null
+                    && mManager == null) {
+                mConnectionState.set(ConnectionState.DISCONNECTED);
+                mDisconnectCause = null;
+                return;
+            }
+
+            mConnectionState.set(ConnectionState.DISCONNECTING);
             mDisconnectCause = exception;
 
             if (mPulseManager != null) {
@@ -284,17 +261,16 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
     private class DisconnectThread extends Thread {
         private Exception mException;
 
-        public DisconnectThread(Exception exception, String name) {
+        DisconnectThread(Exception exception, String name) {
             super(name);
             mException = exception;
         }
 
         @Override
         public void run() {
+            boolean shouldBroadcastDisconnection = mSocket != null || mManager != null || mConnectThread != null;
             try {
-                if (mManager != null) {
-                    mManager.close(mException);
-                }
+                closeManagerQuietly(mException);
 
                 if (mConnectThread != null && mConnectThread.isAlive()) {
                     closeSocketQuietly(mSocket);
@@ -302,7 +278,8 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                     try {
                         SLog.i("disconnect thread need waiting for connection thread done.");
                         mConnectThread.join();
-                    } catch (InterruptedException e) {
+                    } catch (InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
                     }
                     SLog.i("connection thread is done. disconnection thread going on");
                     mConnectThread = null;
@@ -315,15 +292,14 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                     SLog.i("mActionHandler is detached.");
                     mActionHandler = null;
                 }
-
             } finally {
-                isDisconnecting = false;
-                isConnectionPermitted = true;
-                if (!(mException instanceof UnConnectException) && mSocket != null) {
+                mConnectionState.set(ConnectionState.DISCONNECTED);
+                if (!(mException instanceof UnConnectException) && shouldBroadcastDisconnection) {
                     mException = mException instanceof ManuallyDisconnectException ? null : mException;
                     sendBroadcast(IAction.ACTION_DISCONNECTION, mException);
                 }
                 mSocket = null;
+                mManager = null;
 
                 if (mException != null) {
                     SLog.e("socket is disconnecting because: " + mException.getMessage());
@@ -335,7 +311,6 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             }
         }
     }
-
 
     @Override
     public void disconnect() {
@@ -363,13 +338,11 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         if (mPulseManager != null) {
             mPulseManager.setOkOptions(mOptions);
         }
-        if (mSocket != null && isConnect()) {
+        if (hasActiveSocket(mSocket)) {
             applyRuntimeSocketOptions(mSocket);
         }
         if (mReconnectionManager != null && !mReconnectionManager.equals(mOptions.getReconnectionManager())) {
-            if (mReconnectionManager != null) {
-                mReconnectionManager.detach();
-            }
+            mReconnectionManager.detach();
             SLog.i("reconnection manager is replaced");
             mReconnectionManager = mOptions.getReconnectionManager();
             if (mReconnectionManager != null) {
@@ -386,7 +359,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
 
     @Override
     public boolean isConnect() {
-        if (mSocket == null) {
+        if (mConnectionState.get() != ConnectionState.CONNECTED || mSocket == null) {
             return false;
         }
 
@@ -398,7 +371,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
 
     @Override
     public boolean isDisconnecting() {
-        return isDisconnecting;
+        return isDisconnectInProgress();
     }
 
     @Override
@@ -419,15 +392,13 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
     @Override
     public ConnectionInfo getLocalConnectionInfo() {
         ConnectionInfo local = super.getLocalConnectionInfo();
-        if (local == null) {
-            if (isConnect()) {
-                InetSocketAddress address = (InetSocketAddress) mSocket.getLocalSocketAddress();
-                if (address != null) {
-                    if (address.getAddress() != null) {
-                        local = new ConnectionInfo(address.getAddress().getHostAddress(), address.getPort());
-                    } else {
-                        local = new ConnectionInfo(address.getHostString(), address.getPort());
-                    }
+        if (local == null && isConnect()) {
+            InetSocketAddress address = (InetSocketAddress) mSocket.getLocalSocketAddress();
+            if (address != null) {
+                if (address.getAddress() != null) {
+                    local = new ConnectionInfo(address.getAddress().getHostAddress(), address.getPort());
+                } else {
+                    local = new ConnectionInfo(address.getHostString(), address.getPort());
                 }
             }
         }
@@ -449,12 +420,15 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         socket.setReuseAddress(mOptions.isSocketReuseAddress());
     }
 
-    private void prepareSocketAfterConnect(Socket socket) throws SocketException {
+    private void prepareSocketAfterConnect(Socket socket) throws IOException {
         if (socket == null) {
             return;
         }
         socket.setKeepAlive(mOptions.isSocketKeepAlive());
         socket.setTcpNoDelay(mOptions.isSocketTcpNoDelay());
+        if (socket instanceof SSLSocket) {
+            ((SSLSocket) socket).startHandshake();
+        }
     }
 
     private void applyRuntimeSocketOptions(Socket socket) {
@@ -472,12 +446,31 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
         }
     }
 
+    private boolean isDisconnectInProgress() {
+        return mConnectionState.get() == ConnectionState.DISCONNECTING;
+    }
+
+    private boolean hasActiveSocket(Socket socket) {
+        return socket != null && socket.isConnected() && !socket.isClosed();
+    }
+
     private boolean isManualDisconnectInProgress() {
-        return isDisconnecting && mDisconnectCause instanceof ManuallyDisconnectException;
+        return isDisconnectInProgress() && mDisconnectCause instanceof ManuallyDisconnectException;
     }
 
     private boolean shouldSuppressConnectionFailure() {
         return isManualDisconnectInProgress();
+    }
+
+    private TrustManager[] normalizeTrustManagers(TrustManager[] trustManagers) {
+        return trustManagers == null || trustManagers.length == 0 ? null : trustManagers;
+    }
+
+    private void closeManagerQuietly(Exception exception) {
+        if (mManager == null) {
+            return;
+        }
+        mManager.close(exception);
     }
 
     private void closeSocketQuietly(Socket socket) {
@@ -488,5 +481,13 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             socket.close();
         } catch (IOException ignored) {
         }
+    }
+
+    private enum ConnectionState {
+        IDLE,
+        CONNECTING,
+        CONNECTED,
+        DISCONNECTING,
+        DISCONNECTED
     }
 }

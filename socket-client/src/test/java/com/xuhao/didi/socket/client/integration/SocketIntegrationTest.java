@@ -19,6 +19,7 @@ import com.xuhao.didi.socket.server.impl.OkServerOptions;
 
 import org.junit.Test;
 
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -127,6 +128,38 @@ public class SocketIntegrationTest {
     }
 
     @Test
+    public void manualDisconnectShouldCancelPendingReconnect() throws Exception {
+        int port = findFreePort();
+        TestServerHarness server = TestServerHarness.start(port, "re:");
+        IConnectionManager client = null;
+        try {
+            ClientProbe probe = new ClientProbe();
+            OkSocketOptions options = new OkSocketOptions.Builder(baseClientOptions())
+                    .setReconnectionManager(new DefaultReconnectManager())
+                    .setReconnectDelayMillis(200L)
+                    .setReconnectMaxDelayMillis(200L)
+                    .setReconnectDelayScale(1.0d)
+                    .setReconnectJitterRatio(0.0d)
+                    .build();
+            client = openClient(port, options, probe);
+
+            probe.awaitConnectionSuccess();
+            server.awaitClientConnected();
+
+            server.shutdown();
+            probe.awaitDisconnection();
+
+            client.disconnect();
+            server.listen();
+
+            assertTrue("Client reconnected after manual disconnect",
+                    !probe.awaitConnectionSuccessWithin(800L));
+        } finally {
+            close(client, server);
+        }
+    }
+
+    @Test
     public void clientShouldFailOverToBackupConnectionInfo() throws Exception {
         int primaryPort = findFreePort();
         int backupPort = findFreePort();
@@ -181,6 +214,32 @@ public class SocketIntegrationTest {
             assertEquals("pulse", probe.awaitPulse());
         } finally {
             close(client, server);
+        }
+    }
+
+    @Test
+    public void serverShouldReportListenFailureWhenPortIsAlreadyInUse() throws Exception {
+        int port = findFreePort();
+        BlockingQueue<Throwable> failures = new LinkedBlockingQueue<>();
+        ServerSocket blocker = new ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"));
+        IServerManager<OkServerOptions> manager = null;
+        try {
+            manager = (IServerManager<OkServerOptions>) OkSocket.server(port).registerReceiver(new ServerActionAdapter() {
+                @Override
+                public void onServerListenFailed(int serverPort, Throwable throwable) {
+                    failures.offer(throwable);
+                }
+            });
+
+            manager.listen(OkServerOptions.getDefault());
+
+            Throwable failure = failures.poll(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            assertNotNull("Timed out waiting for listen failure", failure);
+        } finally {
+            if (manager != null) {
+                manager.shutdown();
+            }
+            blocker.close();
         }
     }
 
@@ -262,6 +321,10 @@ public class SocketIntegrationTest {
             ConnectionInfo info = successQueue.poll(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             assertNotNull("Timed out waiting for connection success", info);
             return info;
+        }
+
+        boolean awaitConnectionSuccessWithin(long timeoutMs) throws InterruptedException {
+            return successQueue.poll(timeoutMs, TimeUnit.MILLISECONDS) != null;
         }
 
         String awaitRead() throws Exception {

@@ -15,6 +15,8 @@ import com.xuhao.didi.socket.client.sdk.client.connection.IConnectionManager;
 import org.junit.Test;
 
 import java.net.SocketException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -71,6 +73,26 @@ public class ActionDispatcherTest {
 
         assertSame(exception, manager.disconnectException);
         assertSame(exception, listener.lastWriteShutdownException);
+    }
+
+    @Test
+    public void independentThreadDispatchShouldHandleBurstWithoutDroppingCallbacks() throws Exception {
+        final int actionCount = 1500;
+        FakeConnectionManager manager = new FakeConnectionManager(OkSocketOptions.getDefault());
+        ActionDispatcher dispatcher = new ActionDispatcher(manager.getRemoteConnectionInfo(), manager);
+        CountDownLatch latch = new CountDownLatch(actionCount);
+        dispatcher.registerReceiver(new SocketActionAdapter() {
+            @Override
+            public void onSocketIOThreadStart(String action) {
+                latch.countDown();
+            }
+        });
+
+        for (int i = 0; i < actionCount; i++) {
+            dispatcher.sendBroadcast(IAction.ACTION_READ_THREAD_START);
+        }
+
+        assertTrue(latch.await(5, TimeUnit.SECONDS));
     }
 
     private OkSocketOptions syncOptions() {

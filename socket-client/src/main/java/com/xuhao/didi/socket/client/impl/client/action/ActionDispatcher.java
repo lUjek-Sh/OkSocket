@@ -27,42 +27,24 @@ import static com.xuhao.didi.socket.client.sdk.client.action.IAction.ACTION_READ
 import static com.xuhao.didi.socket.client.sdk.client.action.IAction.ACTION_WRITE_THREAD_SHUTDOWN;
 import static com.xuhao.didi.socket.client.sdk.client.action.IAction.ACTION_WRITE_THREAD_START;
 
-
 /**
  * 状态机
  * Created by didi on 2018/4/19.
  */
 public class ActionDispatcher implements IRegister<ISocketActionListener, IConnectionManager>, IStateSender {
-    /**
-     * 线程回调管理Handler
-     */
+    private static final int DEFAULT_ACTION_QUEUE_CAPACITY = 1024;
     private static final DispatchThread HANDLE_THREAD = new DispatchThread();
-
-    /**
-     * 事件消费队列
-     */
-    private static final LinkedBlockingQueue<ActionBean> ACTION_QUEUE = new LinkedBlockingQueue();
+    private static final LinkedBlockingQueue<ActionBean> ACTION_QUEUE =
+            new LinkedBlockingQueue<>(DEFAULT_ACTION_QUEUE_CAPACITY);
 
     static {
-        //启动分发线程
         HANDLE_THREAD.start();
     }
 
-    /**
-     * 行为回调集合
-     */
     private final CopyOnWriteArrayList<ISocketActionListener> mResponseHandlerList = new CopyOnWriteArrayList<>();
-    /**
-     * 连接信息
-     */
     private volatile ConnectionInfo mConnectionInfo;
-    /**
-     * 连接管理器
-     */
     private volatile IConnectionManager mManager;
-    /**
-     * 公平锁,虽然没啥卵用公平,因为使用了tryLock
-     */
+
     public ActionDispatcher(ConnectionInfo info, IConnectionManager manager) {
         mManager = manager;
         mConnectionInfo = info;
@@ -84,13 +66,6 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
         return mManager;
     }
 
-    /**
-     * 分发收到的响应
-     *
-     * @param action
-     * @param arg
-     * @param responseHandler
-     */
     private void dispatchActionToListener(String action, Serializable arg, ISocketActionListener responseHandler) {
         switch (action) {
             case ACTION_CONNECTION_SUCCESS: {
@@ -183,10 +158,9 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
             } catch (Exception e) {
                 SLog.e("Thread mode token callback failed", e);
             }
-        } else if (option.isCallbackInIndependentThread()) {//独立线程进行回调
-            ActionBean bean = new ActionBean(action, serializable, this);
-            ACTION_QUEUE.offer(bean);
-        } else if (!option.isCallbackInIndependentThread()) {//IO线程里进行回调
+        } else if (option.isCallbackInIndependentThread()) {
+            enqueueAction(new ActionBean(action, serializable, this));
+        } else if (!option.isCallbackInIndependentThread()) {
             dispatchToAllListeners(action, serializable);
         } else {
             SLog.e("ActionDispatcher error action:" + action + " is not dispatch");
@@ -204,6 +178,17 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
 
     private void dispatchToAllListeners(String action, Serializable serializable) {
         dispatchToListeners(this, action, serializable);
+    }
+
+    private static void enqueueAction(ActionBean bean) {
+        try {
+            ACTION_QUEUE.put(bean);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (bean != null && bean.mDispatcher != null) {
+                dispatchToListeners(bean.mDispatcher, bean.mAction, bean.arg);
+            }
+        }
     }
 
     private static void dispatchToListeners(ActionDispatcher dispatcher, String action, Serializable serializable) {
@@ -239,11 +224,8 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
         return SocketExceptionUtils.isConnectionShutdownException(exception) ? null : exception;
     }
 
-    /**
-     * 分发线程
-     */
     private static class DispatchThread extends AbsLoopThread {
-        public DispatchThread() {
+        DispatchThread() {
             super("client_action_dispatch_thread");
         }
 
@@ -257,15 +239,11 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
 
         @Override
         protected void loopFinish(Exception e) {
-
         }
     }
 
-    /**
-     * 行为封装
-     */
     protected static class ActionBean {
-        public ActionBean(String action, Serializable arg, ActionDispatcher dispatcher) {
+        ActionBean(String action, Serializable arg, ActionDispatcher dispatcher) {
             mAction = action;
             this.arg = arg;
             mDispatcher = dispatcher;
@@ -276,11 +254,8 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
         ActionDispatcher mDispatcher;
     }
 
-    /**
-     * 行为分发抽象
-     */
     public static class ActionRunnable implements Runnable {
-        private ActionDispatcher.ActionBean mActionBean;
+        private ActionBean mActionBean;
 
         ActionRunnable(ActionBean actionBean) {
             mActionBean = actionBean;
@@ -293,5 +268,4 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
             }
         }
     }
-
 }

@@ -19,10 +19,17 @@ Lightweight blocking TCP socket library for Java and Android.
 - Heartbeat support
 - SSL socket support
 
+## TLS Notes
+
+- `OkSocketSSLConfig` now uses the platform trust manager by default when no custom `TrustManager[]` is provided.
+- TLS socket creation failures no longer downgrade to a plaintext `Socket`.
+- If you explicitly need to trust self-signed or otherwise untrusted certificates for local development, pass `new TrustManager[]{new TrustAllX509TrustManager()}` in `OkSocketSSLConfig`.
+- `TrustAllX509TrustManager` disables certificate validation and must not be used in production traffic.
+
 ## Requirements
 
 - JDK 17 or newer
-- Gradle wrapper included in the repository
+- Gradle 8.13 or newer
 
 ## Build JAR Files
 
@@ -31,13 +38,13 @@ Build all library jars from the project root:
 ### Windows
 
 ```powershell
-.\gradlew.bat :socket-core:jar :socket-common-interface:jar :socket-client:jar :socket-server:jar
+gradle :socket-core:jar :socket-common-interface:jar :socket-client:jar :socket-server:jar
 ```
 
 ### macOS / Linux
 
 ```bash
-./gradlew :socket-core:jar :socket-common-interface:jar :socket-client:jar :socket-server:jar
+gradle :socket-core:jar :socket-common-interface:jar :socket-client:jar :socket-server:jar
 ```
 
 Generated artifacts:
@@ -50,7 +57,7 @@ Generated artifacts:
 You can also build a single module jar:
 
 ```powershell
-.\gradlew.bat :socket-client:jar
+gradle :socket-client:jar
 ```
 
 ## Runtime Notes
@@ -64,9 +71,10 @@ If you use:
 
 ## Quality Gates
 
-- `./gradlew libraryCheck` - builds library jars and runs library unit tests only.
-- `./gradlew demoCheck` - runs the Android demo release build and demo lint checks.
-- `./gradlew qualityCheck` - runs both library and demo validation flows.
+- `gradle libraryCheck` - builds library jars and runs library unit tests only.
+- `gradle libraryPublish` - publishes all Java library modules to `build/repos/releases` or `build/repos/snapshots`.
+- `gradle demoCheck` - runs the Android demo release build and demo lint checks.
+- `gradle qualityCheck` - runs both library and demo validation flows.
 
 ## License
 

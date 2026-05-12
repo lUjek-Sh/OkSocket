@@ -20,44 +20,26 @@ import static com.xuhao.didi.socket.server.action.IAction.Server.ACTION_CLIENT_C
 import static com.xuhao.didi.socket.server.action.IAction.Server.ACTION_CLIENT_DISCONNECTED;
 import static com.xuhao.didi.socket.server.action.IAction.Server.ACTION_SERVER_ALLREADY_SHUTDOWN;
 import static com.xuhao.didi.socket.server.action.IAction.Server.ACTION_SERVER_LISTENING;
+import static com.xuhao.didi.socket.server.action.IAction.Server.ACTION_SERVER_LISTEN_FAILED;
 import static com.xuhao.didi.socket.server.action.IAction.Server.ACTION_SERVER_WILL_BE_SHUTDOWN;
-
 
 /**
  * 服务器状态机
  * Created by didi on 2018/4/19.
  */
 public class ServerActionDispatcher implements IRegister<IServerActionListener, IServerManager>, IStateSender {
-    /**
-     * 线程回调管理Handler
-     */
+    private static final int DEFAULT_ACTION_QUEUE_CAPACITY = 1024;
     private static final DispatchThread HANDLE_THREAD = new DispatchThread();
-
-    /**
-     * 事件消费队列
-     */
-    private static final LinkedBlockingQueue<ActionBean> ACTION_QUEUE = new LinkedBlockingQueue();
+    private static final LinkedBlockingQueue<ActionBean> ACTION_QUEUE =
+            new LinkedBlockingQueue<>(DEFAULT_ACTION_QUEUE_CAPACITY);
 
     static {
-        //启动分发线程
         HANDLE_THREAD.start();
     }
 
-    /**
-     * 回调列表
-     */
     private volatile List<IServerActionListener> mResponseHandlerList = new ArrayList<>();
-    /**
-     * 服务器端口
-     */
     private volatile int mServerPort;
-    /**
-     * 客户端池子
-     */
     private volatile IClientPool<IClient, String> mClientPool;
-    /**
-     * 服务器管理器实例
-     */
     private volatile IServerManager<OkServerOptions> mServerManager;
 
     public ServerActionDispatcher(IServerManager<OkServerOptions> manager) {
@@ -92,12 +74,6 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
         return mServerManager;
     }
 
-    /**
-     * 分发收到的响应
-     *
-     * @param action
-     * @param responseHandler
-     */
     private void dispatchActionToListener(String action, Object arg, IServerActionListener responseHandler) {
         switch (action) {
             case ACTION_SERVER_LISTENING: {
@@ -105,6 +81,14 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
                     responseHandler.onServerListening(mServerPort);
                 } catch (Exception e) {
                     SLog.e("Server listening callback failed", e);
+                }
+                break;
+            }
+            case ACTION_SERVER_LISTEN_FAILED: {
+                try {
+                    responseHandler.onServerListenFailed(mServerPort, (Throwable) arg);
+                } catch (Exception e) {
+                    SLog.e("Server listen failed callback failed", e);
                 }
                 break;
             }
@@ -148,8 +132,7 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
 
     @Override
     public void sendBroadcast(String action, Serializable serializable) {
-        ActionBean bean = new ActionBean(action, serializable, this);
-        ACTION_QUEUE.offer(bean);
+        enqueueAction(new ActionBean(action, serializable, this));
     }
 
     @Override
@@ -157,11 +140,30 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
         sendBroadcast(action, null);
     }
 
-    /**
-     * 行为封装
-     */
+    private static void enqueueAction(ActionBean bean) {
+        try {
+            ACTION_QUEUE.put(bean);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (bean != null && bean.mDispatcher != null) {
+                bean.mDispatcher.dispatch(bean);
+            }
+        }
+    }
+
+    private void dispatch(ActionBean actionBean) {
+        synchronized (mResponseHandlerList) {
+            List<IServerActionListener> list = new ArrayList<>(mResponseHandlerList);
+            Iterator<IServerActionListener> it = list.iterator();
+            while (it.hasNext()) {
+                IServerActionListener listener = it.next();
+                dispatchActionToListener(actionBean.mAction, actionBean.arg, listener);
+            }
+        }
+    }
+
     protected static class ActionBean {
-        public ActionBean(String action, Serializable arg, ServerActionDispatcher dispatcher) {
+        ActionBean(String action, Serializable arg, ServerActionDispatcher dispatcher) {
             mAction = action;
             this.arg = arg;
             mDispatcher = dispatcher;
@@ -172,11 +174,8 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
         ServerActionDispatcher mDispatcher;
     }
 
-    /**
-     * 分发线程
-     */
     private static class DispatchThread extends AbsLoopThread {
-        public DispatchThread() {
+        DispatchThread() {
             super("server_action_dispatch_thread");
         }
 
@@ -184,22 +183,12 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
         protected void runInLoopThread() throws Exception {
             ActionBean actionBean = ACTION_QUEUE.take();
             if (actionBean != null && actionBean.mDispatcher != null) {
-                ServerActionDispatcher actionDispatcher = actionBean.mDispatcher;
-                synchronized (actionDispatcher.mResponseHandlerList) {
-                    List<IServerActionListener> list = new ArrayList<>(actionDispatcher.mResponseHandlerList);
-                    Iterator<IServerActionListener> it = list.iterator();
-                    while (it.hasNext()) {
-                        IServerActionListener listener = it.next();
-                        actionDispatcher.dispatchActionToListener(actionBean.mAction, actionBean.arg, listener);
-                    }
-                }
+                actionBean.mDispatcher.dispatch(actionBean);
             }
         }
 
         @Override
         protected void loopFinish(Exception e) {
-
         }
     }
-
 }

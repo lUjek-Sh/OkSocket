@@ -14,18 +14,21 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Created by xuhao on 2017/5/31.
  */
 public class WriterImpl implements IWriter<IIOCoreOptions> {
     private static final int DEFAULT_QUEUE_CAPACITY = 256;
+    private static final long QUEUE_POLL_TIMEOUT_MILLIS = 100L;
 
     private volatile IIOCoreOptions mOkOptions;
     private final Object mQueueLock = new Object();
     private IStateSender mStateSender;
     private OutputStream mOutputStream;
-    private final LinkedBlockingQueue<ISendable> mQueue = new LinkedBlockingQueue<>();
+    private volatile LinkedBlockingQueue<ISendable> mQueue =
+            new LinkedBlockingQueue<>(DEFAULT_QUEUE_CAPACITY);
     private volatile int mQueueCapacity = DEFAULT_QUEUE_CAPACITY;
 
     @Override
@@ -36,13 +39,7 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
 
     @Override
     public boolean write() throws RuntimeException {
-        ISendable sendable = null;
-        try {
-            sendable = mQueue.take();
-        } catch (InterruptedException ignored) {
-            Thread.currentThread().interrupt();
-        }
-
+        ISendable sendable = takeNextSendable();
         if (sendable == null) {
             return false;
         }
@@ -87,7 +84,21 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
     @Override
     public void setOption(IIOCoreOptions option) {
         mOkOptions = option;
-        mQueueCapacity = option == null ? DEFAULT_QUEUE_CAPACITY : option.getWritePackageQueueCapacity();
+        int newCapacity = option == null ? DEFAULT_QUEUE_CAPACITY : option.getWritePackageQueueCapacity();
+        synchronized (mQueueLock) {
+            if (newCapacity == mQueueCapacity) {
+                return;
+            }
+            if (mQueue.size() > newCapacity) {
+                throw new IllegalStateException(
+                        "Cannot shrink write queue below pending message count: pending="
+                                + mQueue.size() + ", capacity=" + newCapacity);
+            }
+            LinkedBlockingQueue<ISendable> newQueue = new LinkedBlockingQueue<>(newCapacity);
+            mQueue.drainTo(newQueue);
+            mQueue = newQueue;
+            mQueueCapacity = newCapacity;
+        }
     }
 
     @Override
@@ -96,10 +107,9 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
             return;
         }
         synchronized (mQueueLock) {
-            if (mQueue.size() >= mQueueCapacity) {
+            if (!mQueue.offer(sendable)) {
                 throw new WriteException("write queue is full, capacity=" + mQueueCapacity);
             }
-            mQueue.offer(sendable);
         }
     }
 
@@ -112,5 +122,21 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
             } catch (IOException ignored) {
             }
         }
+    }
+
+    private ISendable takeNextSendable() {
+        while (!Thread.currentThread().isInterrupted()) {
+            LinkedBlockingQueue<ISendable> queue = mQueue;
+            try {
+                ISendable sendable = queue.poll(QUEUE_POLL_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                if (sendable != null) {
+                    return sendable;
+                }
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
     }
 }

@@ -9,6 +9,8 @@ public interface IAction {
 
         String ACTION_SERVER_LISTENING = "action_server_listening";
 
+        String ACTION_SERVER_LISTEN_FAILED = "action_server_listen_failed";
+
         String ACTION_CLIENT_CONNECTED = "action_client_connected";
 
         String ACTION_CLIENT_DISCONNECTED = "action_client_disconnected";

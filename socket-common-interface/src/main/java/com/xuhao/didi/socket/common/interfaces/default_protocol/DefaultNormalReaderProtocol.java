@@ -16,8 +16,15 @@ public class DefaultNormalReaderProtocol implements IReaderProtocol {
 
     @Override
     public int getBodyLength(byte[] header, ByteOrder byteOrder) {
-        if (header == null || header.length < getHeaderLength()) {
-            return 0;
+        if (header == null) {
+            throw new IllegalArgumentException("Protocol header can not be null");
+        }
+        if (header.length != getHeaderLength()) {
+            throw new IllegalArgumentException(
+                    "Protocol header length mismatch, expected "
+                            + getHeaderLength()
+                            + " bytes but was "
+                            + header.length);
         }
         ByteBuffer bb = ByteBuffer.wrap(header);
         bb.order(byteOrder);

@@ -20,15 +20,10 @@ import java.net.SocketException;
 public class ServerManagerImpl extends AbsServerRegisterProxy implements IServerManagerPrivate<OkServerOptions> {
 
     private boolean isInit = false;
-
     private int mServerPort = -999;
-
     private ServerSocket mServerSocket;
-
     private ClientPoolImpl mClientPoolImpl;
-
     private OkServerOptions mServerOptions;
-
     private AbsLoopThread mAcceptThread;
 
     @Override
@@ -36,7 +31,6 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
         checkCallStack();
         if (!isInit && mServerPort == -999) {
             init(this);
-
             mServerPort = serverPort;
             mServerActionDispatcher.setServerPort(mServerPort);
             isInit = true;
@@ -83,13 +77,15 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
             mAcceptThread = new AcceptThread("server accepting in " + mServerPort);
             mAcceptThread.start();
         } catch (Exception e) {
-            shutdown();
+            sendBroadcast(IAction.Server.ACTION_SERVER_LISTEN_FAILED, e);
+            cleanupFailedListen();
         }
     }
 
     @Override
     public boolean isLive() {
-        return isInit && mServerSocket != null
+        return isInit
+                && mServerSocket != null
                 && !mServerSocket.isClosed()
                 && mAcceptThread != null
                 && !mAcceptThread.isShutdown();
@@ -102,13 +98,15 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
 
     private class AcceptThread extends AbsLoopThread {
 
-        public AcceptThread(String name) {
+        AcceptThread(String name) {
             super(name);
         }
 
         @Override
         protected void beforeLoop() throws Exception {
-            mClientPoolImpl = new ClientPoolImpl(mServerOptions.getConnectCapacity());
+            mClientPoolImpl = new ClientPoolImpl(
+                    mServerOptions.getConnectCapacity(),
+                    mServerOptions.getClientPoolOverflowStrategy());
             mServerActionDispatcher.setClientPool(mClientPoolImpl);
             sendBroadcast(IAction.Server.ACTION_SERVER_LISTENING);
         }
@@ -125,7 +123,7 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
 
         @Override
         protected void loopFinish(Exception e) {
-            if (!(e instanceof InitiativeDisconnectException)) {
+            if (!(e instanceof InitiativeDisconnectException) && e != null) {
                 sendBroadcast(IAction.Server.ACTION_SERVER_WILL_BE_SHUTDOWN, e);
             }
         }
@@ -165,7 +163,7 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
 
         try {
             mServerSocket.close();
-        } catch (IOException e) {
+        } catch (IOException ignored) {
         }
 
         mServerSocket = null;
@@ -178,4 +176,18 @@ public class ServerManagerImpl extends AbsServerRegisterProxy implements IServer
         sendBroadcast(IAction.Server.ACTION_SERVER_ALLREADY_SHUTDOWN);
     }
 
+    private void cleanupFailedListen() {
+        if (mServerSocket != null) {
+            try {
+                mServerSocket.close();
+            } catch (IOException ignored) {
+            }
+        }
+        mServerSocket = null;
+        mClientPoolImpl = null;
+        if (mAcceptThread != null) {
+            mAcceptThread.shutdown(new InitiativeDisconnectException());
+            mAcceptThread = null;
+        }
+    }
 }

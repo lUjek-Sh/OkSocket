@@ -1,6 +1,5 @@
 package com.xuhao.didi.socket.server.impl;
 
-
 import com.xuhao.didi.core.iocore.interfaces.IIOCoreOptions;
 import com.xuhao.didi.core.protocol.IReaderProtocol;
 import com.xuhao.didi.socket.common.interfaces.default_protocol.DefaultNormalReaderProtocol;
@@ -9,40 +8,19 @@ import java.nio.ByteOrder;
 
 public class OkServerOptions implements IIOCoreOptions {
     private static boolean isDebug;
-    /**
-     * 服务器连接能力数
-     */
     private int mConnectCapacity;
-    /**
-     * 写入Socket管道中的字节序
-     */
     private ByteOrder mWriteOrder;
-    /**
-     * 从Socket管道中读取字节序时的字节序
-     */
     private ByteOrder mReadOrder;
-    /**
-     * Socket通讯中,业务层定义的数据包包头格式
-     */
     private IReaderProtocol mReaderProtocol;
-    /**
-     * 发送时单个数据包的总长度
-     */
     private int mWritePackageBytes;
     private int mWritePackageQueueCapacity;
-    /**
-     * 读取时单次读取的缓存字节长度,数值越大,读取效率越高.但是相应的系统消耗将越大
-     */
     private int mReadPackageBytes;
-    /**
-     * 最大读取数据的兆数(MB)<br>
-     * 防止数据体过大的数据导致前端内存溢出.
-     */
     private int mMaxReadDataMB;
     private boolean isServerSocketReuseAddress;
     private boolean isClientSocketReuseAddress;
     private boolean isClientSocketKeepAlive;
     private boolean isClientSocketTcpNoDelay;
+    private ClientPoolOverflowStrategy mClientPoolOverflowStrategy;
 
     private OkServerOptions() {
     }
@@ -65,6 +43,7 @@ public class OkServerOptions implements IIOCoreOptions {
         okOptions.isClientSocketReuseAddress = true;
         okOptions.isClientSocketKeepAlive = true;
         okOptions.isClientSocketTcpNoDelay = true;
+        okOptions.mClientPoolOverflowStrategy = ClientPoolOverflowStrategy.REJECT_NEW_CLIENT;
         return okOptions;
     }
 
@@ -139,6 +118,11 @@ public class OkServerOptions implements IIOCoreOptions {
             return this;
         }
 
+        public Builder setClientPoolOverflowStrategy(ClientPoolOverflowStrategy strategy) {
+            mOptions.mClientPoolOverflowStrategy = strategy;
+            return this;
+        }
+
         public OkServerOptions build() {
             validate(mOptions);
             return mOptions;
@@ -161,6 +145,7 @@ public class OkServerOptions implements IIOCoreOptions {
             copy.isClientSocketReuseAddress = source.isClientSocketReuseAddress;
             copy.isClientSocketKeepAlive = source.isClientSocketKeepAlive;
             copy.isClientSocketTcpNoDelay = source.isClientSocketTcpNoDelay;
+            copy.mClientPoolOverflowStrategy = source.mClientPoolOverflowStrategy;
             return copy;
         }
 
@@ -192,9 +177,11 @@ public class OkServerOptions implements IIOCoreOptions {
             if (options.mMaxReadDataMB <= 0) {
                 throw new IllegalArgumentException("MaxReadDataMB must be greater than 0");
             }
+            if (options.mClientPoolOverflowStrategy == null) {
+                throw new IllegalArgumentException("ClientPoolOverflowStrategy can not be null");
+            }
         }
     }
-
 
     public int getConnectCapacity() {
         return mConnectCapacity;
@@ -214,6 +201,10 @@ public class OkServerOptions implements IIOCoreOptions {
 
     public boolean isClientSocketTcpNoDelay() {
         return isClientSocketTcpNoDelay;
+    }
+
+    public ClientPoolOverflowStrategy getClientPoolOverflowStrategy() {
+        return mClientPoolOverflowStrategy;
     }
 
     @Override
@@ -254,5 +245,10 @@ public class OkServerOptions implements IIOCoreOptions {
     @Override
     public boolean isDebug() {
         return isDebug;
+    }
+
+    public enum ClientPoolOverflowStrategy {
+        REJECT_NEW_CLIENT,
+        EVICT_OLDEST_CLIENT
     }
 }
