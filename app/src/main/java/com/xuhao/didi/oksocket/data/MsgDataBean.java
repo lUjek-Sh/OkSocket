@@ -5,7 +5,7 @@ import com.xuhao.didi.core.iocore.interfaces.ISendable;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Created by Tony on 2017/10/24.
@@ -20,7 +20,7 @@ public class MsgDataBean implements ISendable {
 
     @Override
     public byte[] parse() {
-        byte[] body = content.getBytes(Charset.defaultCharset());
+        byte[] body = content.getBytes(StandardCharsets.UTF_8);
         ByteBuffer bb = ByteBuffer.allocate(4 + body.length);
         bb.order(ByteOrder.BIG_ENDIAN);
         bb.putInt(body.length);

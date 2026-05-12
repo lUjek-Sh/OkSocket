@@ -2,22 +2,17 @@ package com.xuhao.didi.oksocket;
 
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.content.Context;
 import android.content.Intent;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.annotation.Nullable;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
-import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -39,119 +34,81 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.SocketException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Enumeration;
 
-/**
- * Created by didi on 2018/4/20.
- */
-
 public class DemoActivity extends AppCompatActivity implements IClientIOCallback {
-
-    private Button mSimpleBtn;
-
-    private Button mComplexBtn;
-
     private Button mServerBtn;
-
-    private Button mAdminBtn;
-
     private IServerManager mServerManager;
-
     private TextView mIPTv;
-
-    private int mPort = 8080;
+    private final int mPort = 8080;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity);
-        mSimpleBtn = findViewById(R.id.btn1);
-        mComplexBtn = findViewById(R.id.btn2);
+        Button mSimpleBtn = findViewById(R.id.btn1);
+        Button mComplexBtn = findViewById(R.id.btn2);
         mServerBtn = findViewById(R.id.btn3);
-        mAdminBtn = findViewById(R.id.admin);
+        Button mAdminBtn = findViewById(R.id.admin);
         mIPTv = findViewById(R.id.ip);
 
         OkServerOptions.setIsDebug(true);
         OkSocketOptions.setIsDebug(true);
         SLog.setIsDebug(true);
 
-        mIPTv.setText("当前IP(Local Device IP):" + getIPAddress());
-        mSimpleBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(DemoActivity.this, SimpleDemoActivity.class);
-                startActivity(intent);
-            }
-        });
-        mComplexBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(DemoActivity.this, ComplexDemoActivity.class);
-                startActivity(intent);
-            }
-        });
+        updateLocalIp();
 
-        mAdminBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                Intent intent = new Intent(DemoActivity.this, ServerAdminActivity.class);
-                startActivity(intent);
-            }
-        });
+        mSimpleBtn.setOnClickListener(v -> startActivity(new Intent(this, SimpleDemoActivity.class)));
+        mComplexBtn.setOnClickListener(v -> startActivity(new Intent(this, ComplexDemoActivity.class)));
+        mAdminBtn.setOnClickListener(v -> startActivity(new Intent(this, ServerAdminActivity.class)));
 
         mServerManager = OkSocket.server(mPort).registerReceiver(new ServerActionAdapter() {
             @Override
             public void onServerListening(int serverPort) {
-                Log.i("ServerCallback", Thread.currentThread().getName() + " onServerListening,serverPort:" + serverPort);
+                Log.i("ServerCallback", Thread.currentThread().getName() + " onServerListening, serverPort:" + serverPort);
                 flushServerText();
             }
 
             @Override
             public void onClientConnected(IClient client, int serverPort, IClientPool clientPool) {
-                Log.i("ServerCallback", Thread.currentThread().getName() + " onClientConnected,serverPort:" + serverPort + "--ClientNums:" + clientPool.size() + "--ClientTag:" + client.getUniqueTag());
+                Log.i("ServerCallback", Thread.currentThread().getName() + " onClientConnected, serverPort:" + serverPort + ", clients:" + clientPool.size() + ", clientTag:" + client.getUniqueTag());
                 client.addIOCallback(DemoActivity.this);
             }
 
             @Override
             public void onClientDisconnected(IClient client, int serverPort, IClientPool clientPool) {
-                Log.i("ServerCallback", Thread.currentThread().getName() + " onClientDisconnected,serverPort:" + serverPort + "--ClientNums:" + clientPool.size() + "--ClientTag:" + client.getUniqueTag());
+                Log.i("ServerCallback", Thread.currentThread().getName() + " onClientDisconnected, serverPort:" + serverPort + ", clients:" + clientPool.size() + ", clientTag:" + client.getUniqueTag());
                 client.removeIOCallback(DemoActivity.this);
             }
 
             @Override
             public void onServerWillBeShutdown(int serverPort, IServerShutdown shutdown, IClientPool clientPool, Throwable throwable) {
-                Log.i("ServerCallback", Thread.currentThread().getName() + " onServerWillBeShutdown,serverPort:" + serverPort + "--ClientNums:" + clientPool
-                        .size());
+                Log.i("ServerCallback", Thread.currentThread().getName() + " onServerWillBeShutdown, serverPort:" + serverPort + ", clients:" + clientPool.size());
                 shutdown.shutdown();
             }
 
             @Override
             public void onServerAlreadyShutdown(int serverPort) {
-                Log.i("ServerCallback", Thread.currentThread().getName() + " onServerAlreadyShutdown,serverPort:" + serverPort);
+                Log.i("ServerCallback", Thread.currentThread().getName() + " onServerAlreadyShutdown, serverPort:" + serverPort);
                 flushServerText();
             }
         });
 
-        mIPTv.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                ClipboardManager myClipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                ClipData myClip = ClipData.newPlainText("ip", mIPTv.getText().toString().substring(5));
-                myClipboard.setPrimaryClip(myClip);
-                Toast.makeText(DemoActivity.this, "复制到剪切板", Toast.LENGTH_LONG).show();
+        mIPTv.setOnClickListener(v -> {
+            ClipboardManager clipboardManager = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (clipboardManager != null) {
+                clipboardManager.setPrimaryClip(ClipData.newPlainText(getString(R.string.copy_ip), getIPAddress()));
+                Toast.makeText(this, R.string.copied_to_clipboard, Toast.LENGTH_LONG).show();
             }
         });
 
-        mServerBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (!mServerManager.isLive()) {
-                    mServerManager.listen();
-                } else {
-                    mServerManager.shutdown();
-                }
+        mServerBtn.setOnClickListener(v -> {
+            if (!mServerManager.isLive()) {
+                mServerManager.listen();
+            } else {
+                mServerManager.shutdown();
             }
         });
     }
@@ -160,105 +117,86 @@ public class DemoActivity extends AppCompatActivity implements IClientIOCallback
     protected void onResume() {
         super.onResume();
         flushServerText();
-        mIPTv.setText("当前IP(Local Device IP):" + getIPAddress());
-    }
-
-    private void flushServerText() {
-        if (mServerManager.isLive()) {
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    mServerBtn.setText(mPort + "服务器关闭(Local Server Demo in " + mPort + " Stop)");
-                }
-            });
-        } else {
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    mServerBtn.setText(mPort + "服务器启动(Local Server Demo in " + mPort + " Start)");
-                }
-            });
-        }
+        updateLocalIp();
     }
 
     @Override
     public void onClientRead(OriginalData originalData, IClient client, IClientPool<IClient, String> clientPool) {
-        String str = new String(originalData.getBodyBytes(), Charset.forName("utf-8"));
-        JsonObject jsonObject = null;
+        String str = new String(originalData.getBodyBytes(), StandardCharsets.UTF_8);
         try {
-            jsonObject = new JsonParser().parse(str).getAsJsonObject();
+            JsonObject jsonObject = JsonParser.parseString(str).getAsJsonObject();
             int cmd = jsonObject.get("cmd").getAsInt();
-            if (cmd == 54) {//登陆成功
+            if (cmd == 54) {
                 String handshake = jsonObject.get("handshake").getAsString();
-                Log.i("onClientIOServer", Thread.currentThread().getName() + " 接收到:" + client.getHostIp() + " 握手信息:" + handshake);
-            } else if (cmd == 14) {//心跳
-                Log.i("onClientIOServer", Thread.currentThread().getName() + " 接收到:" + client.getHostIp() + " 收到心跳");
+                Log.i("onClientIOServer", Thread.currentThread().getName() + " received handshake from " + client.getHostIp() + ": " + handshake);
+            } else if (cmd == 14) {
+                Log.i("onClientIOServer", Thread.currentThread().getName() + " received heartbeat from " + client.getHostIp());
             } else {
-                Log.i("onClientIOServer", Thread.currentThread().getName() + " 接收到:" + client.getHostIp() + " " + str);
+                Log.i("onClientIOServer", Thread.currentThread().getName() + " received from " + client.getHostIp() + ": " + str);
             }
         } catch (Exception e) {
-            Log.i("onClientIOServer", Thread.currentThread().getName() + " 接收到:" + client.getHostIp() + " " + str);
+            Log.i("onClientIOServer", Thread.currentThread().getName() + " received from " + client.getHostIp() + ": " + str);
         }
-        MsgDataBean msgDataBean = new MsgDataBean(str);
-        clientPool.sendToAll(msgDataBean);
+        clientPool.sendToAll(new MsgDataBean(str));
     }
 
     @Override
     public void onClientWrite(ISendable sendable, IClient client, IClientPool<IClient, String> clientPool) {
-        byte[] bytes = sendable.parse();
-        bytes = Arrays.copyOfRange(bytes, 4, bytes.length);
-        String str = new String(bytes, Charset.forName("utf-8"));
-        JsonObject jsonObject = null;
+        String str = decodeSendable(sendable);
         try {
-            jsonObject = new JsonParser().parse(str).getAsJsonObject();
+            JsonObject jsonObject = JsonParser.parseString(str).getAsJsonObject();
             int cmd = jsonObject.get("cmd").getAsInt();
-            switch (cmd) {
-                case 54: {
-                    String handshake = jsonObject.get("handshake").getAsString();
-                    Log.i("onClientIOServer", Thread.currentThread().getName() + " 发送给:" + client.getHostIp() + " 握手数据:" + handshake);
-                    break;
-                }
-                default:
-                    Log.i("onClientIOServer", Thread.currentThread().getName() + " 发送给:" + client.getHostIp() + " " + str);
+            if (cmd == 54) {
+                String handshake = jsonObject.get("handshake").getAsString();
+                Log.i("onClientIOServer", Thread.currentThread().getName() + " sent handshake to " + client.getHostIp() + ": " + handshake);
+            } else {
+                Log.i("onClientIOServer", Thread.currentThread().getName() + " sent to " + client.getHostIp() + ": " + str);
             }
         } catch (Exception e) {
-            Log.i("onClientIOServer", Thread.currentThread().getName() + " 发送给:" + client.getHostIp() + " " + str);
+            Log.i("onClientIOServer", Thread.currentThread().getName() + " sent to " + client.getHostIp() + ": " + str);
         }
+    }
+
+    private void updateLocalIp() {
+        mIPTv.setText(getString(R.string.local_device_ip_prefix, getIPAddress()));
+    }
+
+    private void flushServerText() {
+        Handler handler = new Handler(Looper.getMainLooper());
+        handler.post(() -> {
+            if (mServerManager != null && mServerManager.isLive()) {
+                mServerBtn.setText(getString(R.string.server_stop, mPort));
+            } else {
+                mServerBtn.setText(getString(R.string.server_start, mPort));
+            }
+        });
+    }
+
+    private String decodeSendable(ISendable sendable) {
+        byte[] packet = sendable.parse();
+        if (packet.length <= 4) {
+            return "";
+        }
+        byte[] body = Arrays.copyOfRange(packet, 4, packet.length);
+        return new String(body, StandardCharsets.UTF_8);
     }
 
     public String getIPAddress() {
-        NetworkInfo info = ((ConnectivityManager)
-                getApplicationContext().getSystemService(Context.CONNECTIVITY_SERVICE)).getActiveNetworkInfo();
-        if (info != null && info.isConnected()) {
-            if (info.getType() == ConnectivityManager.TYPE_MOBILE) {//当前使用2G/3G/4G网络
-                try {
-                    //Enumeration<NetworkInterface> en=NetworkInterface.getNetworkInterfaces();
-                    for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements(); ) {
-                        NetworkInterface intf = en.nextElement();
-                        for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements(); ) {
-                            InetAddress inetAddress = enumIpAddr.nextElement();
-                            if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
-                                return inetAddress.getHostAddress();
-                            }
-                        }
+        try {
+            for (Enumeration<NetworkInterface> networkInterfaces = NetworkInterface.getNetworkInterfaces();
+                 networkInterfaces.hasMoreElements(); ) {
+                NetworkInterface networkInterface = networkInterfaces.nextElement();
+                for (Enumeration<InetAddress> addresses = networkInterface.getInetAddresses();
+                     addresses.hasMoreElements(); ) {
+                    InetAddress inetAddress = addresses.nextElement();
+                    if (!inetAddress.isLoopbackAddress() && inetAddress instanceof Inet4Address) {
+                        return inetAddress.getHostAddress();
                     }
-                } catch (SocketException e) {
-                    e.printStackTrace();
                 }
-
-            } else if (info.getType() == ConnectivityManager.TYPE_WIFI) {//当前使用无线网络
-                WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                WifiInfo wifiInfo = wifiManager.getConnectionInfo();
-                int ipAddress = wifiInfo.getIpAddress();
-                if (ipAddress == 0) return "未连接wifi";
-                return ((ipAddress & 0xff) + "." + (ipAddress >> 8 & 0xff) + "."
-                        + (ipAddress >> 16 & 0xff) + "." + (ipAddress >> 24 & 0xff));
             }
-        } else {
-            //当前无网络连接,请在设置中打开网络
-            return "当前无网络连接,请在设置中打开网络";
+        } catch (SocketException e) {
+            SLog.e("Failed to enumerate local IP addresses", e);
         }
-        return "IP获取失败";
+        return getString(R.string.local_ip_unavailable);
     }
-
 }

@@ -13,8 +13,7 @@ public class AdminKickOfflineBean extends DefaultSendBean {
             jsonObject.put("who", who);
             content = jsonObject.toString();
         } catch (JSONException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Failed to create kick-offline payload", e);
         }
     }
-
 }

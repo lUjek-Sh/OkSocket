@@ -16,9 +16,7 @@ public class RestartBean extends DefaultSendBean {
             jsonObject.put("port", 8080);
             content = jsonObject.toString();
         } catch (JSONException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Failed to create restart payload", e);
         }
     }
-
-
 }

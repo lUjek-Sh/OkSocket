@@ -97,7 +97,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                 try {
                     responseHandler.onSocketConnectionSuccess(mConnectionInfo, action);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Connection success callback failed", e);
                 }
                 break;
             }
@@ -106,7 +106,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                     Exception exception = (Exception) arg;
                     responseHandler.onSocketConnectionFailed(mConnectionInfo, action, exception);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Connection failed callback failed", e);
                 }
                 break;
             }
@@ -115,7 +115,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                     Exception exception = (Exception) arg;
                     responseHandler.onSocketDisconnection(mConnectionInfo, action, exception);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Disconnection callback failed", e);
                 }
                 break;
             }
@@ -124,7 +124,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                     OriginalData data = (OriginalData) arg;
                     responseHandler.onSocketReadResponse(mConnectionInfo, action, data);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Read callback failed", e);
                 }
                 break;
             }
@@ -133,7 +133,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                 try {
                     responseHandler.onSocketIOThreadStart(action);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("IO thread start callback failed", e);
                 }
                 break;
             }
@@ -142,7 +142,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                     ISendable sendable = (ISendable) arg;
                     responseHandler.onSocketWriteResponse(mConnectionInfo, action, sendable);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Write callback failed", e);
                 }
                 break;
             }
@@ -152,7 +152,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                     Exception exception = resolveShutdownCallbackException(action, (Exception) arg, responseHandler);
                     responseHandler.onSocketIOThreadShutdown(action, exception);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("IO thread shutdown callback failed", e);
                 }
                 break;
             }
@@ -161,7 +161,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
                     IPulseSendable sendable = (IPulseSendable) arg;
                     responseHandler.onPulseSend(mConnectionInfo, sendable);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Pulse callback failed", e);
                 }
                 break;
             }
@@ -181,7 +181,7 @@ public class ActionDispatcher implements IRegister<ISocketActionListener, IConne
             try {
                 token.handleCallbackEvent(runnable);
             } catch (Exception e) {
-                e.printStackTrace();
+                SLog.e("Thread mode token callback failed", e);
             }
         } else if (option.isCallbackInIndependentThread()) {//独立线程进行回调
             ActionBean bean = new ActionBean(action, serializable, this);

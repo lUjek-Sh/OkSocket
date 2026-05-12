@@ -29,6 +29,7 @@ public class OkServerOptions implements IIOCoreOptions {
      * 发送时单个数据包的总长度
      */
     private int mWritePackageBytes;
+    private int mWritePackageQueueCapacity;
     /**
      * 读取时单次读取的缓存字节长度,数值越大,读取效率越高.但是相应的系统消耗将越大
      */
@@ -56,6 +57,7 @@ public class OkServerOptions implements IIOCoreOptions {
         okOptions.mConnectCapacity = 50;
         okOptions.mMaxReadDataMB = 10;
         okOptions.mWritePackageBytes = 100;
+        okOptions.mWritePackageQueueCapacity = 256;
         okOptions.mReadPackageBytes = 50;
         okOptions.mReadOrder = ByteOrder.BIG_ENDIAN;
         okOptions.mWriteOrder = ByteOrder.BIG_ENDIAN;
@@ -99,6 +101,11 @@ public class OkServerOptions implements IIOCoreOptions {
 
         public Builder setWritePackageBytes(int writePackageBytes) {
             mOptions.mWritePackageBytes = writePackageBytes;
+            return this;
+        }
+
+        public Builder setWritePackageQueueCapacity(int writePackageQueueCapacity) {
+            mOptions.mWritePackageQueueCapacity = writePackageQueueCapacity;
             return this;
         }
 
@@ -146,6 +153,7 @@ public class OkServerOptions implements IIOCoreOptions {
             copy.mConnectCapacity = source.mConnectCapacity;
             copy.mMaxReadDataMB = source.mMaxReadDataMB;
             copy.mWritePackageBytes = source.mWritePackageBytes;
+            copy.mWritePackageQueueCapacity = source.mWritePackageQueueCapacity;
             copy.mReadPackageBytes = source.mReadPackageBytes;
             copy.mReadOrder = source.mReadOrder;
             copy.mWriteOrder = source.mWriteOrder;
@@ -174,6 +182,9 @@ public class OkServerOptions implements IIOCoreOptions {
             }
             if (options.mWritePackageBytes <= 0) {
                 throw new IllegalArgumentException("WritePackageBytes must be greater than 0");
+            }
+            if (options.mWritePackageQueueCapacity <= 0) {
+                throw new IllegalArgumentException("WritePackageQueueCapacity must be greater than 0");
             }
             if (options.mReadPackageBytes <= 0) {
                 throw new IllegalArgumentException("ReadPackageBytes must be greater than 0");
@@ -233,6 +244,11 @@ public class OkServerOptions implements IIOCoreOptions {
     @Override
     public int getWritePackageBytes() {
         return mWritePackageBytes;
+    }
+
+    @Override
+    public int getWritePackageQueueCapacity() {
+        return mWritePackageQueueCapacity;
     }
 
     @Override

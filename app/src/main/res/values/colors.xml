@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="colorPrimary">#3F51B5</color>
-    <color name="colorPrimaryDark">#303F9F</color>
-    <color name="colorAccent">#FF4081</color>
+    <color name="demo_primary">#0B57D0</color>
+    <color name="demo_on_primary">#FFFFFF</color>
+    <color name="demo_primary_container">#D8E2FF</color>
+    <color name="demo_on_primary_container">#001A43</color>
+    <color name="demo_secondary">#4A5C92</color>
+    <color name="demo_on_secondary">#FFFFFF</color>
+    <color name="demo_surface">#FFFFFF</color>
+    <color name="demo_on_surface">#1A1C1E</color>
+    <color name="demo_surface_variant">#E7ECF4</color>
+    <color name="demo_outline">#74777F</color>
 </resources>

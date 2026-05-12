@@ -18,6 +18,8 @@ public interface IIOCoreOptions {
 
     int getWritePackageBytes();
 
+    int getWritePackageQueueCapacity();
+
     boolean isDebug();
 
 }

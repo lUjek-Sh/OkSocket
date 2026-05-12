@@ -2,55 +2,52 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:padding="16dp">
 
-
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btn1"
         android:layout_width="match_parent"
-        android:layout_height="65dp"
-        android:layout_marginTop="20dp"
-        android:text="简单示例(Simple Demo)"
-        android:textAllCaps="false" />
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/simple_demo" />
 
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btn2"
         android:layout_width="match_parent"
-        android:layout_height="65dp"
-        android:layout_marginTop="20dp"
-        android:text="复杂示例(Complex Demo)"
-        android:textAllCaps="false" />
-
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="@string/complex_demo" />
 
     <TextView
         android:id="@+id/ip"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="20dp"
+        android:layout_marginTop="16dp"
         android:gravity="center_horizontal"
-        android:text="当前IP(Local Device IP):"
+        android:text="@string/local_ip_unavailable"
         android:textSize="15sp" />
 
-
-    <Button
+    <com.google.android.material.button.MaterialButton
         android:id="@+id/btn3"
         android:layout_width="match_parent"
-        android:layout_height="65dp"
-        android:text="8080服务器启动(Local Server Demo on 8080 Start)"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="@string/server_start_default"
         android:textAllCaps="false" />
 
-    <RelativeLayout
+    <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="0dp"
+        android:layout_weight="1">
 
-        <Button
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/admin"
+            style="?attr/materialButtonOutlinedStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_alignParentBottom="true"
-            android:layout_alignParentRight="true"
-            android:text="Echo Server Admin"
-            android:textAllCaps="false" />
-    </RelativeLayout>
+            android:layout_gravity="bottom|end"
+            android:text="@string/server_admin" />
+    </FrameLayout>
 
 </LinearLayout>

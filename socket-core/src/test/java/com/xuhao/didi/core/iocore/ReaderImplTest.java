@@ -112,6 +112,11 @@ public class ReaderImplTest {
         }
 
         @Override
+        public int getWritePackageQueueCapacity() {
+            return 1;
+        }
+
+        @Override
         public boolean isDebug() {
             return false;
         }

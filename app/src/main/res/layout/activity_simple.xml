@@ -1,134 +1,137 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/form"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:gravity="center_horizontal"
-    android:orientation="vertical"
-    android:padding="16dp">
+    android:fillViewport="true">
 
-    <ScrollView
-        android:id="@+id/form"
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/send_label" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/send_list"
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:background="@color/demo_surface_variant" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:text="@string/receive_label" />
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rece_list"
+            android:layout_width="match_parent"
+            android:layout_height="150dp"
+            android:background="@color/demo_surface_variant" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:layout_marginTop="20dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
 
-
-            <TextView
-                android:layout_width="wrap_content"
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:text="发送(Sending)" />
+                android:layout_weight="2"
+                android:hint="@string/hint_ip">
 
-            <android.support.v7.widget.RecyclerView
-                android:id="@+id/send_list"
-                android:layout_width="match_parent"
-                android:layout_height="150dp"
-                android:background="#dfdddd" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_alignParentRight="true"
-                android:layout_marginTop="10dp"
-                android:text="接收(Receiving)" />
-
-            <android.support.v7.widget.RecyclerView
-                android:id="@+id/rece_list"
-                android:layout_width="match_parent"
-                android:layout_height="150dp"
-                android:background="#dfdddd" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:orientation="horizontal">
-
-                <android.support.design.widget.TextInputLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="2">
-
-                    <EditText
-                        android:id="@+id/ip"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="ip"
-                        android:inputType="text"
-                        android:lines="1"
-                        android:maxLines="1"
-                        android:text="104.238.184.237" />
-
-                </android.support.design.widget.TextInputLayout>
-
-                <android.support.design.widget.TextInputLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1">
-
-                    <EditText
-                        android:id="@+id/port"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="port"
-                        android:inputType="number"
-                        android:lines="1"
-                        android:maxLines="1"
-                        android:text="8080" />
-
-                </android.support.design.widget.TextInputLayout>
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/connect"
-                    style="?android:textAppearanceSmall"
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/ip"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="Connect"
-                    android:textStyle="bold" />
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:text="@string/default_ip" />
 
-                <Button
-                    android:id="@+id/clear_log"
-                    style="?android:textAppearanceSmall"
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="12dp"
+                android:hint="@string/hint_port">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/port"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="CLEAR_LOG"
-                    android:textStyle="bold" />
+                    android:inputType="number"
+                    android:maxLines="1"
+                    android:text="@string/default_port" />
 
-            </LinearLayout>
+            </com.google.android.material.textfield.TextInputLayout>
+        </LinearLayout>
 
-            <LinearLayout
-                android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/connect"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:layout_weight="1"
+                android:text="@string/connect" />
 
-                <EditText
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/clear_log"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="@string/clear_log" />
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:baselineAligned="false"
+            android:orientation="horizontal">
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="3"
+                android:hint="@string/send_hint">
+
+                <com.google.android.material.textfield.TextInputEditText
                     android:id="@+id/send_et"
                     android:layout_width="match_parent"
                     android:layout_height="100dp"
-                    android:layout_weight="1"
-                    android:gravity="top"
-                    android:hint="输入要发送的文字(Input the word what you want to sending)"
+                    android:gravity="top|start"
+                    android:inputType="textMultiLine"
                     android:maxLines="100"
-                    android:padding="5dp" />
+                    android:padding="8dp" />
 
-                <Button
-                    android:id="@+id/send_btn"
-                    android:layout_width="match_parent"
-                    android:layout_height="match_parent"
-                    android:layout_weight="3"
-                    android:text="SEND" />
-            </LinearLayout>
+            </com.google.android.material.textfield.TextInputLayout>
 
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/send_btn"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="12dp"
+                android:layout_weight="1"
+                android:text="@string/send" />
         </LinearLayout>
-    </ScrollView>
-</LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

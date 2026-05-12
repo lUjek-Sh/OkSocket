@@ -13,8 +13,7 @@ public class AdminHandShakeBean extends DefaultSendBean {
             jsonObject.put("handshake", pass);
             content = jsonObject.toString();
         } catch (JSONException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Failed to create admin handshake payload", e);
         }
     }
-
 }

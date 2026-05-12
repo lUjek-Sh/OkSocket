@@ -37,3 +37,23 @@ subprojects {
 tasks.register('clean', Delete) {
     delete rootProject.layout.buildDirectory
 }
+
+tasks.register('libraryJar') {
+    dependsOn ':socket-core:jar', ':socket-common-interface:jar', ':socket-client:jar', ':socket-server:jar'
+}
+
+tasks.register('libraryTest') {
+    dependsOn ':socket-core:test', ':socket-common-interface:test', ':socket-client:test', ':socket-server:test'
+}
+
+tasks.register('libraryCheck') {
+    dependsOn 'libraryJar', 'libraryTest'
+}
+
+tasks.register('demoCheck') {
+    dependsOn ':app:assembleRelease', ':app:lintDebug'
+}
+
+tasks.register('qualityCheck') {
+    dependsOn 'libraryCheck', 'demoCheck'
+}

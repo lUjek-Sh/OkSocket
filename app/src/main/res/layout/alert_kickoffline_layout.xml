@@ -2,21 +2,22 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal">
+    android:orientation="horizontal"
+    android:paddingHorizontal="10dp">
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="10dp"
-        android:text="Who:"
+        android:text="@string/kick_offline_target"
         android:textSize="13sp" />
 
     <EditText
         android:id="@+id/who"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginLeft="5dp"
-        android:layout_marginRight="10dp"
+        android:layout_marginStart="8dp"
+        android:hint="@string/kick_offline_target_hint"
+        android:importantForAutofill="no"
         android:inputType="text"
         android:textSize="13sp" />
 

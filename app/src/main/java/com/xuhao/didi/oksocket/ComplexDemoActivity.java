@@ -3,14 +3,13 @@ package com.xuhao.didi.oksocket;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
-import android.support.v7.widget.SwitchCompat;
-import android.view.View;
 import android.widget.Button;
-import android.widget.CompoundButton;
 import android.widget.EditText;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -31,97 +30,71 @@ import com.xuhao.didi.socket.client.sdk.client.action.SocketActionAdapter;
 import com.xuhao.didi.socket.client.sdk.client.connection.IConnectionManager;
 import com.xuhao.didi.socket.client.sdk.client.connection.NoneReconnect;
 
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
-
 public class ComplexDemoActivity extends AppCompatActivity {
-
-    private ConnectionInfo mInfo;
-
-    private Button mConnect;
-    private IConnectionManager mManager;
-    private EditText mIPET;
-    private EditText mPortET;
-    private Button mRedirect;
-    private EditText mFrequencyET;
-    private Button mSetFrequency;
-    private Button mMenualPulse;
-    private Button mClearLog;
-    private SwitchCompat mReconnectSwitch;
-
-    private RecyclerView mSendList;
-    private RecyclerView mReceList;
-
-    private LogAdapter mSendLogAdapter = new LogAdapter();
-    private LogAdapter mReceLogAdapter = new LogAdapter();
-
-    private SocketActionAdapter adapter = new SocketActionAdapter() {
-
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final LogAdapter mSendLogAdapter = new LogAdapter();
+    private final LogAdapter mReceLogAdapter = new LogAdapter();
+    private final SocketActionAdapter adapter = new SocketActionAdapter() {
         @Override
         public void onSocketConnectionSuccess(ConnectionInfo info, String action) {
-            logRece("连接成功(Connecting Successful)");
+            logRece("Connection successful");
             mManager.send(new HandShakeBean());
-            mConnect.setText("DisConnect");
+            mConnect.setText(R.string.disconnect);
             initSwitch();
             mManager.getPulseManager().setPulseSendable(new PulseBean());
             mIPET.setEnabled(true);
             mPortET.setEnabled(true);
         }
 
-        private void initSwitch() {
-            OkSocketOptions okSocketOptions = mManager.getOption();
-            mReconnectSwitch.setChecked(!(okSocketOptions.getReconnectionManager() instanceof NoneReconnect));
-        }
-
         @Override
         public void onSocketDisconnection(ConnectionInfo info, String action, Exception e) {
-            if (e != null) {
-                if (e instanceof RedirectException) {
-                    logSend("正在重定向连接(Redirect Connecting)...");
-                    mManager.switchConnectionInfo(((RedirectException) e).redirectInfo);
-                    mManager.connect();
-                    mIPET.setEnabled(true);
-                    mPortET.setEnabled(true);
-                } else {
-                    logSend("异常断开(Disconnected with exception):" + e.getMessage());
-                    mIPET.setEnabled(false);
-                    mPortET.setEnabled(false);
-                }
+            if (e instanceof RedirectException) {
+                logSend("Redirecting connection");
+                mManager.switchConnectionInfo(((RedirectException) e).redirectInfo);
+                mManager.connect();
+                mIPET.setEnabled(true);
+                mPortET.setEnabled(true);
+            } else if (e != null) {
+                logSend("Disconnected with exception: " + e.getMessage());
+                mIPET.setEnabled(false);
+                mPortET.setEnabled(false);
             } else {
-                logSend("正常断开(Disconnect Manually)");
+                logSend("Disconnected manually");
                 mIPET.setEnabled(false);
                 mPortET.setEnabled(false);
             }
-            mConnect.setText("Connect");
-
+            mConnect.setText(R.string.connect);
         }
 
         @Override
         public void onSocketConnectionFailed(ConnectionInfo info, String action, Exception e) {
-            logSend("连接失败(Connecting Failed)");
-            mConnect.setText("Connect");
+            logSend("Connection failed");
+            mConnect.setText(R.string.connect);
             mIPET.setEnabled(false);
             mPortET.setEnabled(false);
         }
 
         @Override
         public void onSocketReadResponse(ConnectionInfo info, String action, OriginalData data) {
-            String str = new String(data.getBodyBytes(), Charset.forName("utf-8"));
-            JsonObject jsonObject = new JsonParser().parse(str).getAsJsonObject();
+            String str = new String(data.getBodyBytes(), StandardCharsets.UTF_8);
+            JsonObject jsonObject = JsonParser.parseString(str).getAsJsonObject();
             int cmd = jsonObject.get("cmd").getAsInt();
-            if (cmd == 54) {//登陆成功
+            if (cmd == 54) {
                 String handshake = jsonObject.get("handshake").getAsString();
-                logRece("握手成功! 握手信息(Handshake Success):" + handshake + ". 开始心跳(Start Heartbeat)..");
-            } else if (cmd == 57) {//切换,重定向.(暂时无法演示,如有疑问请咨询github)
-                String ip = jsonObject.get("data").getAsString().split(":")[0];
-                int port = Integer.parseInt(jsonObject.get("data").getAsString().split(":")[1]);
+                logRece("Handshake success: " + handshake + ". Starting heartbeat.");
+            } else if (cmd == 57) {
+                String redirect = jsonObject.get("data").getAsString();
+                String ip = redirect.split(":")[0];
+                int port = Integer.parseInt(redirect.split(":")[1]);
                 ConnectionInfo redirectInfo = new ConnectionInfo(ip, port);
                 redirectInfo.setBackupInfo(mInfo.getBackupInfo());
                 mManager.getReconnectionManager().addIgnoreException(RedirectException.class);
                 mManager.disconnect(new RedirectException(redirectInfo));
-            } else if (cmd == 14) {//心跳
-                logRece("收到心跳,喂狗成功(Heartbeat Received,Feed the Dog)");
+            } else if (cmd == 14) {
+                logRece("Heartbeat received");
                 mManager.getPulseManager().feed();
             } else {
                 logRece(str);
@@ -130,35 +103,35 @@ public class ComplexDemoActivity extends AppCompatActivity {
 
         @Override
         public void onSocketWriteResponse(ConnectionInfo info, String action, ISendable data) {
-            byte[] bytes = data.parse();
-            bytes = Arrays.copyOfRange(bytes, 4, bytes.length);
-            String str = new String(bytes, Charset.forName("utf-8"));
-            JsonObject jsonObject = new JsonParser().parse(str).getAsJsonObject();
+            String str = decodeSendable(data);
+            JsonObject jsonObject = JsonParser.parseString(str).getAsJsonObject();
             int cmd = jsonObject.get("cmd").getAsInt();
-            switch (cmd) {
-                case 54: {
-                    String handshake = jsonObject.get("handshake").getAsString();
-                    logSend("发送握手数据(Handshake Sending):" + handshake);
-                    mManager.getPulseManager().pulse();
-                    break;
-                }
-                default:
-                    logSend(str);
+            if (cmd == 54) {
+                String handshake = jsonObject.get("handshake").getAsString();
+                logSend("Sending handshake: " + handshake);
+                mManager.getPulseManager().pulse();
+            } else {
+                logSend(str);
             }
         }
 
         @Override
         public void onPulseSend(ConnectionInfo info, IPulseSendable data) {
-            byte[] bytes = data.parse();
-            bytes = Arrays.copyOfRange(bytes, 4, bytes.length);
-            String str = new String(bytes, Charset.forName("utf-8"));
-            JsonObject jsonObject = new JsonParser().parse(str).getAsJsonObject();
-            int cmd = jsonObject.get("cmd").getAsInt();
-            if (cmd == 14) {
-                logSend("发送心跳包(Heartbeat Sending)");
+            String str = decodeSendable(data);
+            JsonObject jsonObject = JsonParser.parseString(str).getAsJsonObject();
+            if (jsonObject.get("cmd").getAsInt() == 14) {
+                logSend("Sending heartbeat");
             }
         }
     };
+
+    private ConnectionInfo mInfo;
+    private Button mConnect;
+    private IConnectionManager mManager;
+    private EditText mIPET;
+    private EditText mPortET;
+    private EditText mFrequencyET;
+    private SwitchCompat mReconnectSwitch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -170,147 +143,134 @@ public class ComplexDemoActivity extends AppCompatActivity {
     }
 
     private void findViews() {
-        mSendList = findViewById(R.id.send_list);
-        mReceList = findViewById(R.id.rece_list);
-        mClearLog = findViewById(R.id.clear_log);
-        mSetFrequency = findViewById(R.id.set_pulse_frequency);
+        RecyclerView mSendList = findViewById(R.id.send_list);
+        RecyclerView mReceList = findViewById(R.id.rece_list);
+        Button mClearLog = findViewById(R.id.clear_log);
+        Button mSetFrequency = findViewById(R.id.set_pulse_frequency);
         mFrequencyET = findViewById(R.id.pulse_frequency);
         mConnect = findViewById(R.id.connect);
         mIPET = findViewById(R.id.ip);
         mPortET = findViewById(R.id.port);
-        mRedirect = findViewById(R.id.redirect);
-        mMenualPulse = findViewById(R.id.manual_pulse);
+        Button mRedirect = findViewById(R.id.redirect);
+        Button mManualPulse = findViewById(R.id.manual_pulse);
         mReconnectSwitch = findViewById(R.id.switch_reconnect);
+
+        mSendList.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        mSendList.setAdapter(mSendLogAdapter);
+        mReceList.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        mReceList.setAdapter(mReceLogAdapter);
+
+        mClearLog.setOnClickListener(v -> {
+            mReceLogAdapter.clearLogs();
+            mSendLogAdapter.clearLogs();
+        });
+        mRedirect.setOnClickListener(v -> redirectConnection());
+        mSetFrequency.setOnClickListener(v -> updatePulseFrequency());
+        mManualPulse.setOnClickListener(v -> {
+            if (mManager != null) {
+                mManager.getPulseManager().trigger();
+            }
+        });
     }
 
     private void initData() {
         mIPET.setEnabled(false);
         mPortET.setEnabled(false);
 
-        LinearLayoutManager manager1 = new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false);
-        mSendList.setLayoutManager(manager1);
-        mSendList.setAdapter(mSendLogAdapter);
+        mInfo = new ConnectionInfo(getString(R.string.default_ip), Integer.parseInt(getString(R.string.default_port)));
+        mIPET.setText(mInfo.getIp());
+        mPortET.setText(String.valueOf(mInfo.getPort()));
 
-        LinearLayoutManager manager2 = new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false);
-        mReceList.setLayoutManager(manager2);
-        mReceList.setAdapter(mReceLogAdapter);
-
-        mInfo = new ConnectionInfo("104.238.184.237", 8080);
-
-        final Handler handler = new Handler(Looper.getMainLooper());
-        OkSocketOptions.Builder builder = new OkSocketOptions.Builder();
-        builder.setReconnectionManager(new NoneReconnect());
-        builder.setCallbackThreadModeToken(new OkSocketOptions.ThreadModeToken() {
-            @Override
-            public void handleCallbackEvent(ActionDispatcher.ActionRunnable runnable) {
-                handler.post(runnable);
-            }
-        });
+        OkSocketOptions.Builder builder = new OkSocketOptions.Builder()
+                .setReconnectionManager(new NoneReconnect())
+                .setCallbackThreadModeToken(new OkSocketOptions.ThreadModeToken() {
+                    @Override
+                    public void handleCallbackEvent(ActionDispatcher.ActionRunnable runnable) {
+                        mainHandler.post(runnable);
+                    }
+                });
         mManager = OkSocket.open(mInfo).option(builder.build());
     }
 
     private void setListener() {
         mManager.registerReceiver(adapter);
-
-        mReconnectSwitch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
-            @Override
-            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if (!isChecked) {
-                    if (!(mManager.getReconnectionManager() instanceof NoneReconnect)) {
-                        mManager.option(new OkSocketOptions.Builder(mManager.getOption()).setReconnectionManager(new NoneReconnect()).build());
-                        logSend("关闭重连管理器(Turn Off The Reconnection Manager)");
-                    }
-                } else {
-                    if (mManager.getReconnectionManager() instanceof NoneReconnect) {
-                        mManager.option(new OkSocketOptions.Builder(mManager.getOption()).setReconnectionManager(OkSocketOptions.getDefault().getReconnectionManager()).build());
-                        logSend("打开重连管理器(Turn On The Reconnection Manager)");
-                    }
-                }
+        mReconnectSwitch.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!isChecked && !(mManager.getReconnectionManager() instanceof NoneReconnect)) {
+                mManager.option(new OkSocketOptions.Builder(mManager.getOption())
+                        .setReconnectionManager(new NoneReconnect())
+                        .build());
+                logSend("Reconnect manager disabled");
+            } else if (isChecked && mManager.getReconnectionManager() instanceof NoneReconnect) {
+                mManager.option(new OkSocketOptions.Builder(mManager.getOption())
+                        .setReconnectionManager(OkSocketOptions.getDefault().getReconnectionManager())
+                        .build());
+                logSend("Reconnect manager enabled");
             }
         });
 
-        mConnect.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mManager == null) {
-                    return;
-                }
-                if (!mManager.isConnect()) {
-                    mManager.connect();
-                } else {
-                    mConnect.setText("DisConnecting");
-                    mManager.disconnect();
-                }
+        mConnect.setOnClickListener(v -> {
+            if (mManager == null) {
+                return;
+            }
+            if (!mManager.isConnect()) {
+                mManager.connect();
+            } else {
+                mConnect.setText(R.string.disconnecting);
+                mManager.disconnect();
             }
         });
+    }
 
-        mClearLog.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                mReceLogAdapter.getDataList().clear();
-                mSendLogAdapter.getDataList().clear();
-                mReceLogAdapter.notifyDataSetChanged();
-                mSendLogAdapter.notifyDataSetChanged();
-            }
-        });
+    private void initSwitch() {
+        OkSocketOptions okSocketOptions = mManager.getOption();
+        mReconnectSwitch.setChecked(!(okSocketOptions.getReconnectionManager() instanceof NoneReconnect));
+    }
 
-        mRedirect.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mManager == null) {
-                    return;
-                }
-                String ip = mIPET.getText().toString();
-                String portStr = mPortET.getText().toString();
-                JsonObject jsonObject = new JsonObject();
-                jsonObject.addProperty("cmd", 57);
-                jsonObject.addProperty("data", ip + ":" + portStr);
-                DefaultSendBean bean = new DefaultSendBean();
-                bean.setContent(new Gson().toJson(jsonObject));
-                mManager.send(bean);
-            }
-        });
+    private void redirectConnection() {
+        if (mManager == null) {
+            return;
+        }
+        String ip = mIPET.getText().toString();
+        String portStr = mPortET.getText().toString();
+        JsonObject jsonObject = new JsonObject();
+        jsonObject.addProperty("cmd", 57);
+        jsonObject.addProperty("data", ip + ":" + portStr);
+        DefaultSendBean bean = new DefaultSendBean();
+        bean.setContent(new Gson().toJson(jsonObject));
+        mManager.send(bean);
+    }
 
-        mSetFrequency.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mManager == null) {
-                    return;
-                }
-                String frequencyStr = mFrequencyET.getText().toString();
-                long frequency = 0;
-                try {
-                    frequency = Long.parseLong(frequencyStr);
-                    OkSocketOptions okOptions = new OkSocketOptions.Builder(mManager.getOption())
-                            .setPulseFrequency(frequency)
-                            .build();
-                    mManager.option(okOptions);
-                } catch (NumberFormatException e) {
-                }
-            }
-        });
-
-        mMenualPulse.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mManager == null) {
-                    return;
-                }
-                mManager.getPulseManager().trigger();
-            }
-        });
+    private void updatePulseFrequency() {
+        if (mManager == null) {
+            return;
+        }
+        String frequencyStr = mFrequencyET.getText().toString();
+        try {
+            long frequency = Long.parseLong(frequencyStr);
+            OkSocketOptions okOptions = new OkSocketOptions.Builder(mManager.getOption())
+                    .setPulseFrequency(frequency)
+                    .build();
+            mManager.option(okOptions);
+        } catch (NumberFormatException e) {
+            logSend(getString(R.string.invalid_pulse_frequency));
+        }
     }
 
     private void logSend(String log) {
-        LogBean logBean = new LogBean(System.currentTimeMillis(), log);
-        mSendLogAdapter.getDataList().add(0, logBean);
-        mSendLogAdapter.notifyDataSetChanged();
+        mSendLogAdapter.prepend(new LogBean(System.currentTimeMillis(), log));
     }
 
     private void logRece(String log) {
-        LogBean logBean = new LogBean(System.currentTimeMillis(), log);
-        mReceLogAdapter.getDataList().add(0, logBean);
-        mReceLogAdapter.notifyDataSetChanged();
+        mReceLogAdapter.prepend(new LogBean(System.currentTimeMillis(), log));
+    }
+
+    private String decodeSendable(ISendable data) {
+        byte[] packet = data.parse();
+        if (packet.length <= 4) {
+            return "";
+        }
+        byte[] body = Arrays.copyOfRange(packet, 4, packet.length);
+        return new String(body, StandardCharsets.UTF_8);
     }
 
     @Override
@@ -321,6 +281,4 @@ public class ComplexDemoActivity extends AppCompatActivity {
             mManager.unRegisterReceiver(adapter);
         }
     }
-
 }
-

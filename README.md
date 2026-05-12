@@ -8,7 +8,7 @@ Lightweight blocking TCP socket library for Java and Android.
 - `socket-common-interface` - shared interfaces and default protocol helpers.
 - `socket-client` - client-side connection management, reconnect, heartbeat.
 - `socket-server` - server-side accept loop and client session handling.
-- `app` - demo Android application, not required for `jar` builds.
+- `app` - AndroidX/Material demo application, not required for `jar` builds.
 
 ## Features
 
@@ -61,6 +61,12 @@ If you use:
 
 - `socket-client.jar`, also include `socket-common-interface.jar` and `socket-core.jar`
 - `socket-server.jar`, also include `socket-common-interface.jar` and `socket-core.jar`
+
+## Quality Gates
+
+- `./gradlew libraryCheck` - builds library jars and runs library unit tests only.
+- `./gradlew demoCheck` - runs the Android demo release build and demo lint checks.
+- `./gradlew qualityCheck` - runs both library and demo validation flows.
 
 ## License
 

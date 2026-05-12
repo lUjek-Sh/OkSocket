@@ -3,14 +3,14 @@ package com.xuhao.didi.oksocket;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.support.v7.app.AppCompatActivity;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
-import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
 import com.xuhao.didi.core.iocore.interfaces.IPulseSendable;
 import com.xuhao.didi.core.iocore.interfaces.ISendable;
@@ -27,39 +27,17 @@ import com.xuhao.didi.socket.client.sdk.client.action.SocketActionAdapter;
 import com.xuhao.didi.socket.client.sdk.client.connection.IConnectionManager;
 import com.xuhao.didi.socket.client.sdk.client.connection.NoneReconnect;
 
-import java.nio.charset.Charset;
-
-import static android.widget.Toast.LENGTH_SHORT;
-
-/**
- * Created by Tony on 2017/10/24.
- */
+import java.nio.charset.StandardCharsets;
 
 public class SimpleDemoActivity extends AppCompatActivity {
-    private ConnectionInfo mInfo;
-
-    private Button mConnect;
-
-    private EditText mIPET;
-    private EditText mPortET;
-    private IConnectionManager mManager;
-    private EditText mSendET;
-    private OkSocketOptions mOkOptions;
-    private Button mClearLog;
-    private Button mSendBtn;
-
-    private RecyclerView mSendList;
-    private RecyclerView mReceList;
-
-    private LogAdapter mSendLogAdapter = new LogAdapter();
-    private LogAdapter mReceLogAdapter = new LogAdapter();
-
-    private SocketActionAdapter adapter = new SocketActionAdapter() {
-
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final LogAdapter mSendLogAdapter = new LogAdapter();
+    private final LogAdapter mReceLogAdapter = new LogAdapter();
+    private final SocketActionAdapter adapter = new SocketActionAdapter() {
         @Override
         public void onSocketConnectionSuccess(ConnectionInfo info, String action) {
             mManager.send(new HandShakeBean());
-            mConnect.setText("DisConnect");
+            mConnect.setText(R.string.disconnect);
             mIPET.setEnabled(false);
             mPortET.setEnabled(false);
         }
@@ -67,41 +45,46 @@ public class SimpleDemoActivity extends AppCompatActivity {
         @Override
         public void onSocketDisconnection(ConnectionInfo info, String action, Exception e) {
             if (e != null) {
-                logSend("异常断开(Disconnected with exception):" + e.getMessage());
+                logSend("Disconnected with exception: " + e.getMessage());
             } else {
-                logSend("正常断开(Disconnect Manually)");
+                logSend("Disconnected manually");
             }
-            mConnect.setText("Connect");
+            mConnect.setText(R.string.connect);
             mIPET.setEnabled(true);
             mPortET.setEnabled(true);
         }
 
         @Override
         public void onSocketConnectionFailed(ConnectionInfo info, String action, Exception e) {
-            logSend("连接失败(Connecting Failed)");
-            mConnect.setText("Connect");
+            logSend("Connection failed");
+            mConnect.setText(R.string.connect);
             mIPET.setEnabled(true);
             mPortET.setEnabled(true);
         }
 
         @Override
         public void onSocketReadResponse(ConnectionInfo info, String action, OriginalData data) {
-            String str = new String(data.getBodyBytes(), Charset.forName("utf-8"));
-            logRece(str);
+            logRece(new String(data.getBodyBytes(), StandardCharsets.UTF_8));
         }
 
         @Override
         public void onSocketWriteResponse(ConnectionInfo info, String action, ISendable data) {
-            String str = new String(data.parse(), Charset.forName("utf-8"));
-            logSend(str);
+            logSend(decodeSendable(data));
         }
 
         @Override
         public void onPulseSend(ConnectionInfo info, IPulseSendable data) {
-            String str = new String(data.parse(), Charset.forName("utf-8"));
-            logSend(str);
+            logSend(decodeSendable(data));
         }
     };
+
+    private ConnectionInfo mInfo;
+    private Button mConnect;
+    private EditText mIPET;
+    private EditText mPortET;
+    private IConnectionManager mManager;
+    private EditText mSendET;
+    private OkSocketOptions mOkOptions;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -112,36 +95,34 @@ public class SimpleDemoActivity extends AppCompatActivity {
         setListener();
     }
 
-    @Override
-    protected void onPostResume() {
-        super.onPostResume();
-    }
-
     private void findViews() {
-        mSendList = findViewById(R.id.send_list);
-        mReceList = findViewById(R.id.rece_list);
+        RecyclerView mSendList = findViewById(R.id.send_list);
+        RecyclerView mReceList = findViewById(R.id.rece_list);
         mIPET = findViewById(R.id.ip);
         mPortET = findViewById(R.id.port);
-        mClearLog = findViewById(R.id.clear_log);
+        Button mClearLog = findViewById(R.id.clear_log);
         mConnect = findViewById(R.id.connect);
         mSendET = findViewById(R.id.send_et);
-        mSendBtn = findViewById(R.id.send_btn);
+        Button mSendBtn = findViewById(R.id.send_btn);
+
+        mSendList.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        mSendList.setAdapter(mSendLogAdapter);
+        mReceList.setLayoutManager(new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
+        mReceList.setAdapter(mReceLogAdapter);
+
+        mClearLog.setOnClickListener(v -> {
+            mReceLogAdapter.clearLogs();
+            mSendLogAdapter.clearLogs();
+        });
+        mSendBtn.setOnClickListener(v -> sendMessage());
     }
 
     private void initData() {
-        LinearLayoutManager manager1 = new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false);
-        mSendList.setLayoutManager(manager1);
-        mSendList.setAdapter(mSendLogAdapter);
-
-        LinearLayoutManager manager2 = new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false);
-        mReceList.setLayoutManager(manager2);
-        mReceList.setAdapter(mReceLogAdapter);
-
         initManager();
     }
 
     private void initManager() {
-        final Handler handler = new Handler();
+        Handler handler = new Handler(Looper.getMainLooper());
         mInfo = new ConnectionInfo(mIPET.getText().toString(), Integer.parseInt(mPortET.getText().toString()));
         mOkOptions = new OkSocketOptions.Builder()
                 .setReconnectionManager(new NoneReconnect())
@@ -157,86 +138,63 @@ public class SimpleDemoActivity extends AppCompatActivity {
         mManager.registerReceiver(adapter);
     }
 
-
     private void setListener() {
-        mConnect.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mManager == null) {
-                    return;
-                }
-                if (!mManager.isConnect()) {
-                    initManager();
-                    mManager.connect();
-                    mIPET.setEnabled(false);
-                    mPortET.setEnabled(false);
-                } else {
-                    mConnect.setText("Disconnecting");
-                    mManager.disconnect();
-                }
+        mConnect.setOnClickListener(v -> {
+            if (mManager == null) {
+                return;
             }
-        });
-        mSendBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mManager == null) {
-                    return;
-                }
-                if (!mManager.isConnect()) {
-                    Toast.makeText(getApplicationContext(), "Unconnected", LENGTH_SHORT).show();
-                } else {
-                    String msg = mSendET.getText().toString();
-                    if (TextUtils.isEmpty(msg.trim())) {
-                        return;
-                    }
-                    MsgDataBean msgDataBean = new MsgDataBean(msg);
-                    mManager.send(msgDataBean);
-                    mSendET.setText("");
-                }
-            }
-        });
-        mClearLog.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                mReceLogAdapter.getDataList().clear();
-                mSendLogAdapter.getDataList().clear();
-                mReceLogAdapter.notifyDataSetChanged();
-                mSendLogAdapter.notifyDataSetChanged();
+            if (!mManager.isConnect()) {
+                initManager();
+                mManager.connect();
+                mIPET.setEnabled(false);
+                mPortET.setEnabled(false);
+            } else {
+                mConnect.setText(R.string.disconnecting);
+                mManager.disconnect();
             }
         });
     }
 
+    private void sendMessage() {
+        if (mManager == null) {
+            return;
+        }
+        if (!mManager.isConnect()) {
+            Toast.makeText(this, R.string.unconnected, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String msg = mSendET.getText().toString();
+        if (TextUtils.isEmpty(msg.trim())) {
+            return;
+        }
+        mManager.send(new MsgDataBean(msg));
+        mSendET.setText("");
+    }
+
     private void logSend(final String log) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            LogBean logBean = new LogBean(System.currentTimeMillis(), log);
-            mSendLogAdapter.getDataList().add(0, logBean);
-            mSendLogAdapter.notifyDataSetChanged();
+            mSendLogAdapter.prepend(new LogBean(System.currentTimeMillis(), log));
         } else {
-            final String threadName = Thread.currentThread().getName();
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    logSend(threadName + " 线程打印(In Thread):" + log);
-                }
-            });
+            String threadName = Thread.currentThread().getName();
+            mainHandler.post(() -> logSend(threadName + " (background): " + log));
         }
     }
 
     private void logRece(final String log) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
-            LogBean logBean = new LogBean(System.currentTimeMillis(), log);
-            mReceLogAdapter.getDataList().add(0, logBean);
-            mReceLogAdapter.notifyDataSetChanged();
+            mReceLogAdapter.prepend(new LogBean(System.currentTimeMillis(), log));
         } else {
-            final String threadName = Thread.currentThread().getName();
-            new Handler(Looper.getMainLooper()).post(new Runnable() {
-                @Override
-                public void run() {
-                    logRece(threadName + " 线程打印(In Thread):" + log);
-                }
-            });
+            String threadName = Thread.currentThread().getName();
+            mainHandler.post(() -> logRece(threadName + " (background): " + log));
         }
+    }
 
+    private String decodeSendable(ISendable data) {
+        byte[] packet = data.parse();
+        if (packet.length <= 4) {
+            return "";
+        }
+        return new String(packet, 4, packet.length - 4, StandardCharsets.UTF_8);
     }
 
     @Override

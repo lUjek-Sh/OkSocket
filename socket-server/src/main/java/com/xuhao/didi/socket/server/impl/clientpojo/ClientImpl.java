@@ -4,6 +4,7 @@ import com.xuhao.didi.core.iocore.interfaces.ISendable;
 import com.xuhao.didi.core.iocore.interfaces.IStateSender;
 import com.xuhao.didi.core.pojo.OriginalData;
 import com.xuhao.didi.core.protocol.IReaderProtocol;
+import com.xuhao.didi.core.utils.SLog;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IClient;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IClientIOCallback;
 import com.xuhao.didi.socket.server.action.ClientActionDispatcher;
@@ -16,8 +17,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class ClientImpl extends AbsClient {
 
@@ -33,7 +34,7 @@ public class ClientImpl extends AbsClient {
 
     private volatile boolean isReadThreadStarted;
 
-    private volatile List<IClientIOCallback> mCallbackList = new ArrayList<>();
+    private final CopyOnWriteArrayList<IClientIOCallback> mCallbackList = new CopyOnWriteArrayList<>();
 
     public ClientImpl(Socket socket,
                       OkServerOptions okServerOptions) {
@@ -134,7 +135,7 @@ public class ClientImpl extends AbsClient {
         }
         if (e != null) {
             if (mOkServerOptions.isDebug()) {
-                e.printStackTrace();
+                SLog.e("Client died with exception", e);
             }
         }
         disconnect(e);
@@ -161,9 +162,7 @@ public class ClientImpl extends AbsClient {
         if (isDead || mIOManager == null) {
             return;
         }
-        synchronized (mCallbackList) {
-            mCallbackList.add(clientIOCallback);
-        }
+        mCallbackList.addIfAbsent(clientIOCallback);
         synchronized (mIOManager) {
             if (!isReadThreadStarted) {
                 isReadThreadStarted = true;
@@ -174,42 +173,32 @@ public class ClientImpl extends AbsClient {
 
     @Override
     public void removeIOCallback(IClientIOCallback clientIOCallback) {
-        synchronized (mCallbackList) {
-            mCallbackList.remove(clientIOCallback);
-        }
+        mCallbackList.remove(clientIOCallback);
     }
 
     @Override
     public void removeAllIOCallback() {
-        synchronized (mCallbackList) {
-            mCallbackList.clear();
-        }
+        mCallbackList.clear();
     }
 
     @Override
     public void onClientRead(OriginalData originalData) {
-        List<IClientIOCallback> list = new ArrayList<>();
-        list.addAll(mCallbackList);
-
-        for (IClientIOCallback clientIOCallback : list) {
+        for (IClientIOCallback clientIOCallback : mCallbackList) {
             try {
                 clientIOCallback.onClientRead(originalData, this, mClientPool);
             } catch (Exception e) {
-                e.printStackTrace();
+                SLog.e("Client read observer failed", e);
             }
         }
     }
 
     @Override
     public void onClientWrite(ISendable sendable) {
-        List<IClientIOCallback> list = new ArrayList<>();
-        list.addAll(mCallbackList);
-
-        for (IClientIOCallback clientIOCallback : list) {
+        for (IClientIOCallback clientIOCallback : mCallbackList) {
             try {
                 clientIOCallback.onClientWrite(sendable, this, mClientPool);
             } catch (Exception e) {
-                e.printStackTrace();
+                SLog.e("Client write observer failed", e);
             }
         }
     }

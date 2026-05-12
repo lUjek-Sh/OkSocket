@@ -23,23 +23,13 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
--dontwarn com.xuhao.didi.socket.client.**
--dontwarn com.xuhao.didi.socket.common.**
--dontwarn com.xuhao.didi.socket.server.**
--dontwarn com.xuhao.didi.core.**
-
--keep class com.xuhao.didi.socket.client.** { *; }
--keep class com.xuhao.didi.socket.common.** { *; }
--keep class com.xuhao.didi.socket.server.** { *; }
--keep class com.xuhao.didi.core.** { *; }
+# OkSocket server discovery goes through ServiceLoader, so the provider class
+# name must stay stable in the packaged app.
+-keep class com.xuhao.didi.socket.server.impl.ServerManagerImpl {
+    public <init>();
+}
 
 -keepclassmembers enum * {
     public static **[] values();
     public static ** valueOf(java.lang.String);
-}
--keep class com.xuhao.didi.socket.client.sdk.client.OkSocketOptions$* {
-    *;
-}
--keep class com.xuhao.didi.socket.server.impl.OkServerOptions$* {
-    *;
 }

@@ -53,13 +53,17 @@ android {
     }
 
     lint {
-        abortOnError = false
+        abortOnError = true
+        warningsAsErrors = true
+        checkReleaseBuilds = true
+        disable 'OldTargetApi'
     }
 }
 
 dependencies {
-    implementation 'com.android.support:appcompat-v7:28.0.0'
-    implementation 'com.android.support:design:28.0.0'
+    implementation 'androidx.appcompat:appcompat:1.7.1'
+    implementation 'androidx.recyclerview:recyclerview:1.4.0'
+    implementation 'com.google.android.material:material:1.13.0'
     implementation 'com.google.code.gson:gson:2.14.0'
     implementation project(':socket-client')
     implementation project(':socket-server')

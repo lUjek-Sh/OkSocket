@@ -92,6 +92,7 @@ public class OkSocketOptions implements IIOCoreOptions {
      * 套接字工厂
      */
     private OkSocketFactory mOkSocketFactory;
+    private int mWritePackageQueueCapacity;
     private boolean isSocketReuseAddress;
     private boolean isSocketKeepAlive;
     private boolean isSocketTcpNoDelay;
@@ -262,6 +263,11 @@ public class OkSocketOptions implements IIOCoreOptions {
             return this;
         }
 
+        public Builder setWritePackageQueueCapacity(int writePackageQueueCapacity) {
+            mOptions.mWritePackageQueueCapacity = writePackageQueueCapacity;
+            return this;
+        }
+
         /**
          * 从服务器读取时单个数据包的总长度
          *
@@ -377,6 +383,7 @@ public class OkSocketOptions implements IIOCoreOptions {
             copy.mReadByteOrder = source.mReadByteOrder;
             copy.mReaderProtocol = source.mReaderProtocol;
             copy.mWritePackageBytes = source.mWritePackageBytes;
+            copy.mWritePackageQueueCapacity = source.mWritePackageQueueCapacity;
             copy.mReadPackageBytes = source.mReadPackageBytes;
             copy.mPulseFrequency = source.mPulseFrequency;
             copy.mPulseFeedLoseTimes = source.mPulseFeedLoseTimes;
@@ -416,6 +423,9 @@ public class OkSocketOptions implements IIOCoreOptions {
             }
             if (options.mWritePackageBytes <= 0) {
                 throw new IllegalArgumentException("WritePackageBytes must be greater than 0");
+            }
+            if (options.mWritePackageQueueCapacity <= 0) {
+                throw new IllegalArgumentException("WritePackageQueueCapacity must be greater than 0");
             }
             if (options.mReadPackageBytes <= 0) {
                 throw new IllegalArgumentException("ReadPackageBytes must be greater than 0");
@@ -527,6 +537,11 @@ public class OkSocketOptions implements IIOCoreOptions {
     }
 
     @Override
+    public int getWritePackageQueueCapacity() {
+        return mWritePackageQueueCapacity;
+    }
+
+    @Override
     public int getReadPackageBytes() {
         return mReadPackageBytes;
     }
@@ -572,6 +587,7 @@ public class OkSocketOptions implements IIOCoreOptions {
         okOptions.mReconnectJitterRatio = 0.0d;
         okOptions.mReconnectBackupSwitchThreshold = 12;
         okOptions.mWritePackageBytes = 100;
+        okOptions.mWritePackageQueueCapacity = 256;
         okOptions.mReadPackageBytes = 50;
         okOptions.mReadByteOrder = ByteOrder.BIG_ENDIAN;
         okOptions.mWriteOrder = ByteOrder.BIG_ENDIAN;

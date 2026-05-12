@@ -18,16 +18,15 @@ import java.util.concurrent.LinkedBlockingQueue;
 /**
  * Created by xuhao on 2017/5/31.
  */
-
 public class WriterImpl implements IWriter<IIOCoreOptions> {
+    private static final int DEFAULT_QUEUE_CAPACITY = 256;
 
     private volatile IIOCoreOptions mOkOptions;
-
+    private final Object mQueueLock = new Object();
     private IStateSender mStateSender;
-
     private OutputStream mOutputStream;
-
-    private LinkedBlockingQueue<ISendable> mQueue = new LinkedBlockingQueue<>();
+    private final LinkedBlockingQueue<ISendable> mQueue = new LinkedBlockingQueue<>();
+    private volatile int mQueueCapacity = DEFAULT_QUEUE_CAPACITY;
 
     @Override
     public void initialize(OutputStream outputStream, IStateSender stateSender) {
@@ -40,68 +39,78 @@ public class WriterImpl implements IWriter<IIOCoreOptions> {
         ISendable sendable = null;
         try {
             sendable = mQueue.take();
-        } catch (InterruptedException e) {
-            //ignore;
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
         }
 
-        if (sendable != null) {
-            try {
-                byte[] sendBytes = sendable.parse();
-                int packageSize = mOkOptions.getWritePackageBytes();
-                if (packageSize <= 0) {
-                    throw new WriteException("write package bytes must be greater than 0");
-                }
-                int remainingCount = sendBytes.length;
-                int index = 0;
-                while (remainingCount > 0) {
-                    int realWriteLength = Math.min(packageSize, remainingCount);
-                    mOutputStream.write(sendBytes, index, realWriteLength);
+        if (sendable == null) {
+            return false;
+        }
 
-                    if (SLog.isDebug()) {
-                        byte[] forLogBytes = Arrays.copyOfRange(sendBytes, index, index + realWriteLength);
-                        SLog.i("write bytes: " + BytesUtils.toHexStringForLog(forLogBytes));
-                        SLog.i("bytes write length:" + realWriteLength);
-                    }
+        try {
+            byte[] sendBytes = sendable.parse();
+            int packageSize = mOkOptions.getWritePackageBytes();
+            if (packageSize <= 0) {
+                throw new WriteException("write package bytes must be greater than 0");
+            }
 
-                    index += realWriteLength;
-                    remainingCount -= realWriteLength;
+            int remainingCount = sendBytes.length;
+            int index = 0;
+            while (remainingCount > 0) {
+                int realWriteLength = Math.min(packageSize, remainingCount);
+                mOutputStream.write(sendBytes, index, realWriteLength);
+
+                if (SLog.isDebug()) {
+                    byte[] forLogBytes = Arrays.copyOfRange(sendBytes, index, index + realWriteLength);
+                    SLog.i("write bytes: " + BytesUtils.toHexStringForLog(forLogBytes));
+                    SLog.i("bytes write length:" + realWriteLength);
                 }
-                mOutputStream.flush();
-                if (sendable instanceof IPulseSendable) {
-                    mStateSender.sendBroadcast(IOAction.ACTION_PULSE_REQUEST, sendable);
-                } else {
-                    mStateSender.sendBroadcast(IOAction.ACTION_WRITE_COMPLETE, sendable);
-                }
-            } catch (WriteException e) {
-                throw e;
-            } catch (Exception e) {
-                throw new WriteException(e);
+
+                index += realWriteLength;
+                remainingCount -= realWriteLength;
+            }
+
+            mOutputStream.flush();
+            if (sendable instanceof IPulseSendable) {
+                mStateSender.sendBroadcast(IOAction.ACTION_PULSE_REQUEST, sendable);
+            } else {
+                mStateSender.sendBroadcast(IOAction.ACTION_WRITE_COMPLETE, sendable);
             }
             return true;
+        } catch (WriteException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new WriteException(e);
         }
-        return false;
     }
 
     @Override
     public void setOption(IIOCoreOptions option) {
         mOkOptions = option;
+        mQueueCapacity = option == null ? DEFAULT_QUEUE_CAPACITY : option.getWritePackageQueueCapacity();
     }
 
     @Override
     public void offer(ISendable sendable) {
-        mQueue.offer(sendable);
+        if (sendable == null) {
+            return;
+        }
+        synchronized (mQueueLock) {
+            if (mQueue.size() >= mQueueCapacity) {
+                throw new WriteException("write queue is full, capacity=" + mQueueCapacity);
+            }
+            mQueue.offer(sendable);
+        }
     }
 
     @Override
     public void close() {
+        mQueue.clear();
         if (mOutputStream != null) {
             try {
                 mOutputStream.close();
-            } catch (IOException e) {
-                //ignore
+            } catch (IOException ignored) {
             }
         }
     }
-
-
 }

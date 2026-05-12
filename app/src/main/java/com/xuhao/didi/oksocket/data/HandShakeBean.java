@@ -16,9 +16,7 @@ public class HandShakeBean extends DefaultSendBean {
             jsonObject.put("handshake", "Hello the OkSocket");
             content = jsonObject.toString();
         } catch (JSONException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Failed to create handshake payload", e);
         }
     }
-
-
 }

@@ -68,6 +68,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
      * 是否正在断开
      */
     private volatile boolean isDisconnecting = false;
+    private volatile Exception mDisconnectCause;
 
 
     protected ConnectionManagerImpl(ConnectionInfo info) {
@@ -101,6 +102,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             return;
         }
         isDisconnecting = false;
+        mDisconnectCause = null;
         if (mRemoteConnectionInfo == null) {
             isConnectionPermitted = true;
             throw new UnConnectException("连接参数为空,检查连接参数");
@@ -158,7 +160,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 return sslContext.getSocketFactory().createSocket();
             } catch (Exception e) {
                 if (mOptions.isDebug()) {
-                    e.printStackTrace();
+                    SLog.e("Failed to create SSL socket from protocol " + protocol, e);
                 }
                 SLog.e(e.getMessage());
                 return new Socket();
@@ -169,7 +171,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 return factory.createSocket();
             } catch (IOException e) {
                 if (mOptions.isDebug()) {
-                    e.printStackTrace();
+                    SLog.e("Failed to create SSL socket from custom factory", e);
                 }
                 SLog.e(e.getMessage());
                 return new Socket();
@@ -195,17 +197,25 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 try {
                     mSocket = getSocketByConfig();
                     prepareSocketBeforeConnect(mSocket);
+                    if (isManualDisconnectInProgress()) {
+                        closeSocketQuietly(mSocket);
+                        return;
+                    }
                 } catch (UnConnectException e) {
                     throw e;
                 } catch (Exception e) {
                     if (mOptions.isDebug()) {
-                        e.printStackTrace();
+                        SLog.e("Failed to create socket before connect", e);
                     }
                     throw new UnConnectException("Create socket failed.", e);
                 }
                 if (mLocalConnectionInfo != null) {
                     SLog.i("try bind: " + mLocalConnectionInfo.getIp() + " port:" + mLocalConnectionInfo.getPort());
                     mSocket.bind(new InetSocketAddress(mLocalConnectionInfo.getIp(), mLocalConnectionInfo.getPort()));
+                }
+                if (isManualDisconnectInProgress()) {
+                    closeSocketQuietly(mSocket);
+                    return;
                 }
 
                 SLog.i("Start connect: " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " socket server...");
@@ -217,11 +227,15 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 SLog.i("Socket server: " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect successful!");
             } catch (Exception e) {
                 if (mOptions.isDebug()) {
-                    e.printStackTrace();
+                    SLog.e("Connection thread failed", e);
                 }
                 Exception exception = e instanceof UnConnectException ? e : new UnConnectException(e);
-                SLog.e("Socket server " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect failed! error msg:" + e.getMessage());
-                sendBroadcast(IAction.ACTION_CONNECTION_FAILED, exception);
+                if (shouldSuppressConnectionFailure()) {
+                    SLog.i("Connection attempt cancelled manually for " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort());
+                } else {
+                    SLog.e("Socket server " + mRemoteConnectionInfo.getIp() + ":" + mRemoteConnectionInfo.getPort() + " connect failed! error msg:" + e.getMessage());
+                    sendBroadcast(IAction.ACTION_CONNECTION_FAILED, exception);
+                }
             } finally {
                 isConnectionPermitted = true;
             }
@@ -246,6 +260,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 return;
             }
             isDisconnecting = true;
+            mDisconnectCause = exception;
 
             if (mPulseManager != null) {
                 mPulseManager.dead();
@@ -282,6 +297,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 }
 
                 if (mConnectThread != null && mConnectThread.isAlive()) {
+                    closeSocketQuietly(mSocket);
                     mConnectThread.interrupt();
                     try {
                         SLog.i("disconnect thread need waiting for connection thread done.");
@@ -292,12 +308,7 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                     mConnectThread = null;
                 }
 
-                if (mSocket != null) {
-                    try {
-                        mSocket.close();
-                    } catch (IOException e) {
-                    }
-                }
+                closeSocketQuietly(mSocket);
 
                 if (mActionHandler != null) {
                     mActionHandler.detach(ConnectionManagerImpl.this);
@@ -317,9 +328,10 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
                 if (mException != null) {
                     SLog.e("socket is disconnecting because: " + mException.getMessage());
                     if (mOptions.isDebug()) {
-                        mException.printStackTrace();
+                        SLog.e("Disconnect thread captured exception", mException);
                     }
                 }
+                mDisconnectCause = null;
             }
         }
     }
@@ -454,9 +466,27 @@ public class ConnectionManagerImpl extends AbsConnectionManager {
             socket.setTcpNoDelay(mOptions.isSocketTcpNoDelay());
         } catch (SocketException e) {
             if (mOptions.isDebug()) {
-                e.printStackTrace();
+                SLog.e("Unable to apply runtime socket options", e);
             }
             SLog.e("Unable to apply runtime socket options: " + e.getMessage());
+        }
+    }
+
+    private boolean isManualDisconnectInProgress() {
+        return isDisconnecting && mDisconnectCause instanceof ManuallyDisconnectException;
+    }
+
+    private boolean shouldSuppressConnectionFailure() {
+        return isManualDisconnectInProgress();
+    }
+
+    private void closeSocketQuietly(Socket socket) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            socket.close();
+        } catch (IOException ignored) {
         }
     }
 }

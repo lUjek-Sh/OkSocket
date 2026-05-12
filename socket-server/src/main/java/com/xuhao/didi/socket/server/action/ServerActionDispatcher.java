@@ -1,6 +1,7 @@
 package com.xuhao.didi.socket.server.action;
 
 import com.xuhao.didi.core.iocore.interfaces.IStateSender;
+import com.xuhao.didi.core.utils.SLog;
 import com.xuhao.didi.socket.common.interfaces.basic.AbsLoopThread;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.dispatcher.IRegister;
 import com.xuhao.didi.socket.common.interfaces.common_interfacies.server.IClient;
@@ -103,7 +104,7 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
                 try {
                     responseHandler.onServerListening(mServerPort);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Server listening callback failed", e);
                 }
                 break;
             }
@@ -112,7 +113,7 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
                     IClient client = (IClient) arg;
                     responseHandler.onClientConnected(client, mServerPort, mClientPool);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client connected callback failed", e);
                 }
                 break;
             }
@@ -121,7 +122,7 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
                     IClient client = (IClient) arg;
                     responseHandler.onClientDisconnected(client, mServerPort, mClientPool);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client disconnected callback failed", e);
                 }
                 break;
             }
@@ -130,7 +131,7 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
                     Throwable throwable = (Throwable) arg;
                     responseHandler.onServerWillBeShutdown(mServerPort, mServerManager, mClientPool, throwable);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Server shutdown callback failed", e);
                 }
                 break;
             }
@@ -138,7 +139,7 @@ public class ServerActionDispatcher implements IRegister<IServerActionListener, 
                 try {
                     responseHandler.onServerAlreadyShutdown(mServerPort);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Server already shutdown callback failed", e);
                 }
                 break;
             }

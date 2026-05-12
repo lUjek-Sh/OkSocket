@@ -4,6 +4,7 @@ package com.xuhao.didi.socket.server.action;
 import com.xuhao.didi.core.iocore.interfaces.ISendable;
 import com.xuhao.didi.core.iocore.interfaces.IStateSender;
 import com.xuhao.didi.core.pojo.OriginalData;
+import com.xuhao.didi.core.utils.SLog;
 
 import java.io.Serializable;
 
@@ -41,7 +42,7 @@ public class ClientActionDispatcher implements IStateSender {
                 try {
                     mActionListener.onClientReadReady();
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client read ready callback failed", e);
                 }
                 break;
             }
@@ -50,7 +51,7 @@ public class ClientActionDispatcher implements IStateSender {
                     Exception exception = (Exception) serializable;
                     mActionListener.onClientReadDead(exception);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client read dead callback failed", e);
                 }
                 break;
             }
@@ -58,7 +59,7 @@ public class ClientActionDispatcher implements IStateSender {
                 try {
                     mActionListener.onClientWriteReady();
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client write ready callback failed", e);
                 }
                 break;
             }
@@ -67,7 +68,7 @@ public class ClientActionDispatcher implements IStateSender {
                     Exception exception = (Exception) serializable;
                     mActionListener.onClientWriteDead(exception);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client write dead callback failed", e);
                 }
                 break;
             }
@@ -76,7 +77,7 @@ public class ClientActionDispatcher implements IStateSender {
                     OriginalData data = (OriginalData) serializable;
                     mActionListener.onClientRead(data);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client read callback failed", e);
                 }
                 break;
             }
@@ -85,7 +86,7 @@ public class ClientActionDispatcher implements IStateSender {
                     ISendable data = (ISendable) serializable;
                     mActionListener.onClientWrite(data);
                 } catch (Exception e) {
-                    e.printStackTrace();
+                    SLog.e("Client write callback failed", e);
                 }
                 break;
             }
